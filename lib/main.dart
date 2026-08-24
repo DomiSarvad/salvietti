@@ -7,11 +7,13 @@ import 'services/supabase_service.dart';
 import 'services/sync_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home_shell.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 Future<void> main() async {
+  await initializeDateFormatting('es_BO', null);
   WidgetsFlutterBinding.ensureInitialized();
-  await HiveService.init();       // almacenamiento local offline-first
-  await SupabaseService.init();   // backend en la nube
+  await HiveService.init(); // almacenamiento local offline-first
+  await SupabaseService.init(); // backend en la nube
   runApp(const SalviettiApp());
 }
 
@@ -23,7 +25,8 @@ class SalviettiApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()..recuperarSesion()),
-        ChangeNotifierProvider(create: (_) => SyncService()..iniciarMonitoreo()),
+        ChangeNotifierProvider(
+            create: (_) => SyncService()..iniciarMonitoreo()),
       ],
       child: MaterialApp(
         title: 'Salvietti Control',

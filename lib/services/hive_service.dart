@@ -1,120 +1,85 @@
 import 'package:hive_flutter/hive_flutter.dart';
+import '../core/constants.dart';
+import '../models/movimiento.dart';
 
-import '../models/insumo_model.dart';
-
+/// Capa de persistencia local. Funciona en móvil, escritorio Y web
+/// (Hive usa IndexedDB por debajo en web), cumpliendo el requisito de
+/// "una sola base de código para teléfonos y computadoras".
+///
+/// Estrategia offline-first:
+///  - El catálogo (tapas/preformas/materia_prima) se cachea localmente
+///    cada vez que se lee con éxito de Supabase, para poder consultarlo
+///    sin conexión.
+///  - Los movimientos registrados sin conexión se guardan en la
+///    "cola de sincronización" (colaMovimientos) y quedan marcados
+///    como pendientes hasta que el usuario presiona "Subir todo" (o el
+///    sistema detecta conexión y sincroniza automáticamente).
 class HiveService {
-  static const String _insumoBox = 'insumos';
-  static const String _pendingEntradasBox = 'entradas_offline';
-  static const String _pendingMovimientosBox = 'movimientos_offline';
-  static const String _pendingBitacorasBox = 'bitacora_offline';
-  static const String _auditBox = 'auditoria_offline';
-
   static Future<void> init() async {
     await Hive.initFlutter();
-    await Hive.openBox(_insumoBox);
-    await Hive.openBox(_pendingEntradasBox);
-    await Hive.openBox(_pendingMovimientosBox);
-    await Hive.openBox(_pendingBitacorasBox);
-    await Hive.openBox(_auditBox);
+    await Hive.openBox(HiveBoxes.tapas);
+    await Hive.openBox(HiveBoxes.preformas);
+    await Hive.openBox(HiveBoxes.materiaPrima);
+    await Hive.openBox(HiveBoxes.colaMovimientos);
+    await Hive.openBox(HiveBoxes.sesion);
   }
 
-  static Future<bool> saveOfflineEntrada(Map<String, dynamic> record) async {
-    final box = Hive.box(_pendingEntradasBox);
-    box.add({
-      ...record,
-      'sincronizado': false,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
-    return true;
-  }
-
-  static Future<void> saveOfflineMovimiento(Map<String, dynamic> record) async {
-    final box = Hive.box(_pendingMovimientosBox);
-    box.add({
-      ...record,
-      'sincronizado': false,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
-  }
-
-  static Future<void> saveOfflineBitacora(Map<String, dynamic> record) async {
-    final box = Hive.box(_pendingBitacorasBox);
-    box.add({
-      ...record,
-      'sincronizado': false,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
-  }
-
-  static Future<void> saveOfflineAudit(Map<String, dynamic> record) async {
-    final box = Hive.box(_auditBox);
-    box.add({
-      ...record,
-      'sincronizado': false,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
-  }
-
-  static Future<List<Map<String, dynamic>>> getPendingMovimientos() async {
-    final box = Hive.box(_pendingMovimientosBox);
-    final stored = box.values.toList();
-    return stored
-        .whereType<Map<String, dynamic>>()
-        .where((item) => item['sincronizado'] != true)
-        .toList();
-  }
-
-  static Future<List<Map<String, dynamic>>> getPendingBitacoras() async {
-    final box = Hive.box(_pendingBitacorasBox);
-    final stored = box.values.toList();
-    return stored
-        .whereType<Map<String, dynamic>>()
-        .where((item) => item['sincronizado'] != true)
-        .toList();
-  }
-
-  static Future<void> marcarMovimientoSincronizado(dynamic key) async {
-    final box = Hive.box(_pendingMovimientosBox);
-    final record = box.get(key);
-    if (record is Map) {
-      record['sincronizado'] = true;
-      await box.put(key, record);
+  static Box _boxCatalogo(String tabla) {
+    switch (tabla) {
+      case 'tapas':
+        return Hive.box(HiveBoxes.tapas);
+      case 'preformas':
+        return Hive.box(HiveBoxes.preformas);
+      case 'materia_prima':
+        return Hive.box(HiveBoxes.materiaPrima);
+      default:
+        throw ArgumentError('Tabla desconocida: $tabla');
     }
   }
 
-  static Future<void> marcarBitacoraSincronizada(dynamic key) async {
-    final box = Hive.box(_pendingBitacorasBox);
-    final record = box.get(key);
-    if (record is Map) {
-      record['sincronizado'] = true;
-      await box.put(key, record);
-    }
-  }
-
-  static Future<List<InsumoModel>> getInsumos() async {
-    final box = Hive.box(_insumoBox);
-    final stored = box.values.toList();
-    return stored
-        .whereType<Map<String, dynamic>>()
-        .map((item) => InsumoModel.fromMap(item))
-        .toList();
-  }
-
-  static Future<int> getPendingEntradasCount() async {
-    final box = Hive.box(_pendingEntradasBox);
-    return box.length;
-  }
-
-  static Future<int> getPendingMovimientosCount() async {
-    final box = Hive.box(_pendingMovimientosBox);
-    return box.length;
-  }
-
-  static Future<void> cacheInsumos(List<InsumoModel> insumos) async {
-    final box = Hive.box(_insumoBox);
+  /// Reemplaza el caché local completo de una tabla con los datos frescos
+  /// del servidor (se llama tras cada lectura exitosa online).
+  static Future<void> guardarCatalogo(
+      String tabla, List<Map<String, dynamic>> filas) async {
+    final box = _boxCatalogo(tabla);
     await box.clear();
-    for (final insumo in insumos) {
-      await box.add(insumo.toMap());
+    for (final f in filas) {
+      await box.put(f['id'], f);
     }
   }
+
+  static List<Map<String, dynamic>> leerCatalogo(String tabla) {
+    final box = _boxCatalogo(tabla);
+    return box.values.map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  // -------------------- Cola de movimientos pendientes --------------------
+
+  static Future<void> encolarMovimiento(Movimiento m) async {
+    final box = Hive.box(HiveBoxes.colaMovimientos);
+    await box.put(m.offlineUuid, m.toHiveMap());
+  }
+
+  static List<Movimiento> movimientosPendientes() {
+    final box = Hive.box(HiveBoxes.colaMovimientos);
+    return box.values
+        .map((e) => Movimiento.fromHiveMap(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  static int get cantidadPendientes =>
+      Hive.box(HiveBoxes.colaMovimientos).length;
+
+  static Future<void> quitarDeCola(String offlineUuid) async {
+    await Hive.box(HiveBoxes.colaMovimientos).delete(offlineUuid);
+  }
+
+  // -------------------- Sesión (para recordar último usuario) -------------
+
+  static Future<void> guardarUltimoEmail(String email) async {
+    await Hive.box(HiveBoxes.sesion).put('ultimo_email', email);
+  }
+
+  static String? ultimoEmail() =>
+      Hive.box(HiveBoxes.sesion).get('ultimo_email');
 }

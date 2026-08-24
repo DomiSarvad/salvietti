@@ -1,5 +1,5 @@
 name: salvietti_control
-description: "Sistema de control de inventario de planta - Salvietti del Sur"
+description: Sistema de control e inventario de Salvietti del Sur — offline-first, multiplataforma.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,18 +9,38 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  supabase_flutter: ^2.6.0
+  cupertino_icons: ^1.0.6
+
+  # Backend
+  supabase_flutter: ^2.5.6
+
+  # Estado
+  provider: ^6.1.2
+
+  # Almacenamiento local / offline-first
+  hive: ^2.2.3
   hive_flutter: ^1.1.0
-  flutter_dotenv: ^5.1.0
+  connectivity_plus: ^6.0.3
+
+  # Utilidades
   intl: ^0.19.0
+  uuid: ^4.4.0
+  flutter_dotenv: ^5.1.0
+  fl_chart: ^0.68.0
+  data_table_2: ^2.5.15
+  file_saver: ^0.2.12
+  pdf: ^3.11.0
+  excel: ^4.0.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.11
   flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/logo.jpg

@@ -4,8 +4,10 @@ import '../core/constants.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_sidebar.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'estadisticas/estadisticas_screen.dart';
 import 'inventario/inventario_list_screen.dart';
 import 'produccion/produccion_planner_screen.dart';
+import 'reportes/reportes_screen.dart';
 import 'historial/historial_screen.dart';
 import 'usuarios/usuarios_screen.dart';
 
@@ -27,6 +29,10 @@ class _HomeShellState extends State<HomeShell> {
         return const InventarioListScreen();
       case 'produccion':
         return const ProduccionPlannerScreen();
+      case 'estadisticas':
+        return const EstadisticasScreen();
+      case 'reportes':
+        return const ReportesScreen();
       case 'historial':
         return const HistorialScreen();
       case 'usuarios':

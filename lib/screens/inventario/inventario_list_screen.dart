@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/insumo.dart';
+import '../../models/usuario.dart';
 import '../../services/auth_service.dart';
 import '../../services/inventario_service.dart';
+import '../../services/movimiento_service.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/stock_status_badge.dart';
 import 'insumo_form_dialog.dart';
@@ -16,29 +18,46 @@ class InventarioListScreen extends StatefulWidget {
 }
 
 class _InventarioListScreenState extends State<InventarioListScreen> {
-  String _tabla = 'tapas';
+  late String _tabla;
   String _busqueda = '';
   List<Insumo> _items = [];
   bool _cargando = true;
+  Map<String, DateTime> _vencimientos = {};
 
-  final _tabs = const [
+  static const _todasLasTabs = [
     {'v': 'tapas', 'l': 'Tapas'},
     {'v': 'preformas', 'l': 'Preformas'},
     {'v': 'materia_prima', 'l': 'Materia Prima'},
   ];
 
+  /// Jarabes solo trabaja con su propia materia prima: ni ve ni puede
+  /// elegir las pestañas de Tapas/Preformas.
+  List<Map<String, String>> _tabsPara(Usuario usuario) => usuario.esJarabes
+      ? _todasLasTabs.where((t) => t['v'] == 'materia_prima').toList()
+      : _todasLasTabs;
+
   @override
   void initState() {
     super.initState();
+    final usuario = context.read<AuthService>().usuarioActual!;
+    _tabla = usuario.esJarabes ? 'materia_prima' : 'tapas';
     _cargar();
   }
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
-    final data = await InventarioService.listar(_tabla);
+    final usuario = context.read<AuthService>().usuarioActual!;
+    var data = await InventarioService.listar(_tabla);
+    if (usuario.esJarabes && _tabla == 'materia_prima') {
+      data = data.where((i) => i.area == 'jarabes').toList();
+    }
+    final vencimientos = _tabla == 'materia_prima'
+        ? await MovimientoService.proximosVencimientos()
+        : <String, DateTime>{};
     if (!mounted) return;
     setState(() {
       _items = data;
+      _vencimientos = vencimientos;
       _cargando = false;
     });
   }
@@ -50,6 +69,10 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
           i.codigo.toLowerCase().contains(_busqueda.toLowerCase()))
       .toList();
 
+  bool _puedeEditar(Usuario usuario) => _tabla == 'materia_prima'
+      ? usuario.puedeEditarMateriaPrima
+      : usuario.puedeEditarTapasPreformas;
+
   @override
   Widget build(BuildContext context) {
     final usuario = context.watch<AuthService>().usuarioActual!;
@@ -59,55 +82,58 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Text('Inventario',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              if (usuario.puedeEditarCatalogo) ...[
+          const Text('Inventario',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          if (_puedeEditar(usuario)) ...[
+            const SizedBox(height: 12),
+            // Wrap: en celular estos dos botones pasan a la línea
+            // siguiente en vez de desbordar junto al título.
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
                 OutlinedButton.icon(
                   onPressed: () => _abrirFormularioMovimiento(usuario.id),
                   icon: const Icon(Icons.swap_vert),
                   label: const Text('Registrar movimiento'),
                 ),
-                const SizedBox(width: 12),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primario),
-                  onPressed: () => _abrirFormularioInsumo(usuario.id),
+                  onPressed: () => _abrirFormularioInsumo(usuario),
                   icon: const Icon(Icons.add),
                   label: const Text('Nuevo ítem'),
                 ),
               ],
-            ],
-          ),
+            ),
+          ],
           const SizedBox(height: 16),
-          Row(
-            children: [
-              ..._tabs.map((t) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
+          // Las pestañas van en su propio Wrap (no comparten Row con el
+          // buscador): 3 ChoiceChip ya casi no entran solas en un celular,
+          // sumarles el buscador al lado siempre terminaba desbordando.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _tabsPara(usuario)
+                .map((t) => ChoiceChip(
                       label: Text(t['l']!),
                       selected: _tabla == t['v'],
                       onSelected: (_) {
                         setState(() => _tabla = t['v']!);
                         _cargar();
                       },
-                    ),
-                  )),
-              const SizedBox(width: 24),
-              Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Buscar por nombre o código...',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (v) => setState(() => _busqueda = v),
-                ),
-              ),
-            ],
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Buscar por nombre o código...',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) => setState(() => _busqueda = v),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -124,6 +150,8 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
 
   Widget _tablaTapasPreformas(usuario) {
     return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SingleChildScrollView(
       child: DataTable(
         columns: const [
           DataColumn(label: Text('Código')),
@@ -148,11 +176,14 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
                 ]))
             .toList(),
       ),
+      ),
     );
   }
 
   Widget _tablaMateriaPrima(usuario) {
     return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SingleChildScrollView(
       child: DataTable(
         columns: const [
           DataColumn(label: Text('Código')),
@@ -160,6 +191,7 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
           DataColumn(label: Text('Stock real')),
           DataColumn(label: Text('Consumo/día')),
           DataColumn(label: Text('Días est.')),
+          DataColumn(label: Text('Vencimiento aprox.')),
           DataColumn(label: Text('Proveedor')),
           DataColumn(label: Text('Estado')),
           DataColumn(label: Text('')),
@@ -173,23 +205,25 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
                   DataCell(Text(fmtNum(i.consumoPromedioDia))),
                   DataCell(Text(
                       i.diasExistencia >= 999 ? '-' : fmtNum(i.diasExistencia, decimales: 1))),
+                  DataCell(Text(fmtFecha(_vencimientos[i.id]))),
                   DataCell(Text(i.proveedorHabitual ?? '-')),
                   DataCell(StockStatusBadge(diasExistencia: i.diasExistencia)),
                   DataCell(_accionesFila(i, usuario)),
                 ]))
             .toList(),
       ),
+      ),
     );
   }
 
-  Widget _accionesFila(Insumo i, usuario) {
+  Widget _accionesFila(Insumo i, Usuario usuario) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (usuario.puedeEditarCatalogo)
+        if (_puedeEditar(usuario))
           IconButton(
             icon: const Icon(Icons.edit_outlined, size: 18),
-            onPressed: () => _abrirFormularioInsumo(usuario.id, insumo: i),
+            onPressed: () => _abrirFormularioInsumo(usuario, insumo: i),
           ),
         if (usuario.puedeEliminar)
           IconButton(
@@ -200,11 +234,11 @@ class _InventarioListScreenState extends State<InventarioListScreen> {
     );
   }
 
-  Future<void> _abrirFormularioInsumo(String usuarioId, {Insumo? insumo}) async {
+  Future<void> _abrirFormularioInsumo(Usuario usuario, {Insumo? insumo}) async {
     final guardado = await showDialog<bool>(
       context: context,
       builder: (_) => InsumoFormDialog(
-          tabla: _tabla, insumo: insumo, usuarioId: usuarioId),
+          tabla: _tabla, insumo: insumo, usuarioId: usuario.id, esJarabes: usuario.esJarabes),
     );
     if (guardado == true) _cargar();
   }

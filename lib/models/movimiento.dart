@@ -7,10 +7,11 @@ const _uuid = Uuid();
 /// local (Hive) cuando no hay conexión — de ahí `offlineUuid`, que
 /// garantiza idempotencia al sincronizar (evita duplicados).
 class Movimiento {
+  final String? id; // id real en Supabase (null si todavía no se insertó)
   final String offlineUuid;
   final String tablaOrigen; // 'tapas' | 'preformas' | 'materia_prima'
   final String itemId;
-  final String tipo; // 'ingreso' | 'salida' | 'ajuste'
+  final String tipo; // 'ingreso' | 'salida' | 'ajuste' | 'produccion'
   final double cantidad;
   final String? unidadMedida;
   final String? lote;
@@ -22,9 +23,11 @@ class Movimiento {
   final String? observacion;
   final String usuarioId;
   final DateTime creadoEn;
+  final String? revierteMovimientoId; // si esta fila deshace a otra
   bool sincronizado;
 
   Movimiento({
+    this.id,
     String? offlineUuid,
     required this.tablaOrigen,
     required this.itemId,
@@ -40,6 +43,7 @@ class Movimiento {
     this.observacion,
     required this.usuarioId,
     DateTime? creadoEn,
+    this.revierteMovimientoId,
     this.sincronizado = false,
   })  : offlineUuid = offlineUuid ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
@@ -61,6 +65,8 @@ class Movimiento {
         'origen_offline_uuid': offlineUuid,
         'sincronizado': true,
         'created_at': creadoEn.toIso8601String(),
+        if (revierteMovimientoId != null)
+          'revierte_movimiento_id': revierteMovimientoId,
       };
 
   Map<String, dynamic> toHiveMap() => {
@@ -81,6 +87,30 @@ class Movimiento {
         'creadoEn': creadoEn.toIso8601String(),
         'sincronizado': sincronizado,
       };
+
+  /// Para leer movimientos ya guardados en Supabase (historial/reportes).
+  factory Movimiento.fromMap(Map<String, dynamic> m) => Movimiento(
+        id: m['id'],
+        offlineUuid: m['origen_offline_uuid'] ?? m['id'],
+        tablaOrigen: m['tabla_origen'],
+        itemId: m['item_id'],
+        tipo: m['tipo'],
+        cantidad: (m['cantidad'] as num).toDouble(),
+        unidadMedida: m['unidad_medida'],
+        lote: m['lote'],
+        fechaVencimiento: m['fecha_vencimiento'] != null
+            ? DateTime.tryParse(m['fecha_vencimiento'])
+            : null,
+        proveedor: m['proveedor'],
+        nFactura: m['n_factura'],
+        transportador: m['transportador'],
+        precioTransporte: (m['precio_transporte'] as num?)?.toDouble(),
+        observacion: m['observacion'],
+        usuarioId: m['usuario_id'] ?? '',
+        creadoEn: DateTime.parse(m['created_at']),
+        revierteMovimientoId: m['revierte_movimiento_id'],
+        sincronizado: true,
+      );
 
   factory Movimiento.fromHiveMap(Map m) => Movimiento(
         offlineUuid: m['offlineUuid'],

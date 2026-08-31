@@ -18,6 +18,7 @@ class Insumo {
   final double stockMinimo;
   final bool activo;
   final DateTime? updatedAt;
+  final String? area; // solo materia_prima: null = general, 'jarabes' = su área
 
   Insumo({
     required this.id,
@@ -39,6 +40,7 @@ class Insumo {
     this.stockMinimo = 0,
     this.activo = true,
     this.updatedAt,
+    this.area,
   });
 
   /// Días estimados de existencia = stock actual / consumo promedio diario.
@@ -68,6 +70,7 @@ class Insumo {
       activo: m['activo'] ?? true,
       updatedAt:
           m['updated_at'] != null ? DateTime.tryParse(m['updated_at']) : null,
+      area: m['area'],
     );
   }
 
@@ -100,6 +103,7 @@ class Insumo {
         'tipo_envase': tipoEnvase,
         'cantidad_por_envase': cantidadPorEnvase,
         'proveedor_habitual': proveedorHabitual,
+        'area': area,
       });
     }
     return base;

@@ -50,23 +50,36 @@ class BitacoraService {
     });
   }
 
+  /// El historial no tiene caché local (no forma parte de los datos que se
+  /// necesitan para trabajar sin conexión), así que sin internet simplemente
+  /// se devuelve vacío en vez de dejar la pantalla cargando para siempre.
   static Future<List<Map<String, dynamic>>> historialAcciones(
       {int limite = 100}) async {
-    final data = await SupabaseService.client
-        .from('bitacora_acciones')
-        .select('*, usuarios(nombre_completo, rol)')
-        .order('created_at', ascending: false)
-        .limit(limite);
-    return List<Map<String, dynamic>>.from(data);
+    try {
+      final data = await SupabaseService.client
+          .from('bitacora_acciones')
+          .select('*, usuarios(nombre_completo, rol)')
+          .order('created_at', ascending: false)
+          .limit(limite)
+          .timeout(SupabaseService.timeoutRed);
+      return List<Map<String, dynamic>>.from(data);
+    } catch (_) {
+      return [];
+    }
   }
 
   static Future<List<Map<String, dynamic>>> historialEliminaciones(
       {int limite = 100}) async {
-    final data = await SupabaseService.client
-        .from('bitacora_eliminaciones')
-        .select('*, usuarios(nombre_completo)')
-        .order('created_at', ascending: false)
-        .limit(limite);
-    return List<Map<String, dynamic>>.from(data);
+    try {
+      final data = await SupabaseService.client
+          .from('bitacora_eliminaciones')
+          .select('*, usuarios(nombre_completo)')
+          .order('created_at', ascending: false)
+          .limit(limite)
+          .timeout(SupabaseService.timeoutRed);
+      return List<Map<String, dynamic>>.from(data);
+    } catch (_) {
+      return [];
+    }
   }
 }

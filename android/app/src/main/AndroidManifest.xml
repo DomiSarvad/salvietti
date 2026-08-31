@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Para tomar foto de perfil con la cámara (elegir de galería no
+         requiere permiso explícito: usa el selector de fotos del sistema). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="salvietti"
         android:name="${applicationName}"

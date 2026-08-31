@@ -59,6 +59,13 @@ class SemaforoStock {
   }
 }
 
+/// Reglas de validación de contraseña, compartidas por login, alta de
+/// usuarios, cambio de contraseña y recuperación.
+class Validacion {
+  static const passwordMin = 6;
+  static const passwordMax = 10;
+}
+
 /// Nombres de "cajas" (boxes) de Hive para el almacenamiento offline.
 class HiveBoxes {
   static const tapas = 'box_tapas';
@@ -66,10 +73,14 @@ class HiveBoxes {
   static const materiaPrima = 'box_materia_prima';
   static const colaMovimientos = 'box_cola_movimientos'; // pendientes de subir
   static const sesion = 'box_sesion';
+  static const perfilPendiente = 'box_perfil_pendiente'; // foto sin subir
 }
 
 class AppColors {
-  static const primario = Color(0xFF0F3D6B); // azul corporativo Salvietti
-  static const secundario = Color(0xFF16A34A); // verde operativo
+  // Paleta de marca Salvietti: verde sobrio como color dominante (tomado
+  // del logo), dorado como acento secundario. El rojo queda reservado
+  // para alertas/estados críticos (ver SemaforoStock), no como color de marca.
+  static const primario = Color(0xFF1B5E3A); // verde Salvietti (sobrio)
+  static const secundario = Color(0xFFC99A2E); // dorado, acento de marca
   static const fondo = Color(0xFFF5F7FA);
 }

@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/supabase_service.dart';
+import '../../utils/responsive.dart';
 
-/// Gestión de usuarios: el Gerente puede AGREGAR usuarios (con permiso),
-/// pero solo Almacén tiene control total (editar rol/activar-desactivar).
+/// Gestión de usuarios: solo el Gerente puede dar de alta usuarios nuevos.
+/// El resto de los roles (incluido Almacén) solo ven la lista.
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
   @override
@@ -24,13 +25,20 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
-    final data = await SupabaseService.client
-        .from('usuarios')
-        .select()
-        .order('created_at');
+    List<Map<String, dynamic>> usuarios = [];
+    try {
+      final data = await SupabaseService.client
+          .from('usuarios')
+          .select()
+          .order('created_at')
+          .timeout(SupabaseService.timeoutRed);
+      usuarios = List<Map<String, dynamic>>.from(data);
+    } catch (_) {
+      // Sin conexión: no hay caché de usuarios, se muestra la lista vacía.
+    }
     if (!mounted) return;
     setState(() {
-      _usuarios = List<Map<String, dynamic>>.from(data);
+      _usuarios = usuarios;
       _cargando = false;
     });
   }
@@ -48,20 +56,24 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         builder: (ctx, setLocal) => AlertDialog(
           title: const Text('Nuevo usuario'),
           content: SizedBox(
-            width: 380,
+            width: anchoDialogo(ctx, 380),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                     controller: nombreCtrl,
+                    maxLength: 120,
                     decoration:
                         const InputDecoration(labelText: 'Nombre completo')),
                 TextField(
                     controller: emailCtrl,
+                    maxLength: 254,
+                    keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(labelText: 'Correo')),
                 TextField(
                     controller: passCtrl,
                     obscureText: true,
+                    maxLength: Validacion.passwordMax,
                     decoration:
                         const InputDecoration(labelText: 'Contraseña temporal')),
                 DropdownButtonFormField<String>(
@@ -118,21 +130,17 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Text('Usuarios',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              if (usuarioActual.puedeCrearUsuarios)
-                FilledButton.icon(
-                  style:
-                      FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                  onPressed: _nuevoUsuario,
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Nuevo usuario'),
-                ),
-            ],
-          ),
+          const Text('Usuarios',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          if (usuarioActual.puedeCrearUsuarios) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+              onPressed: _nuevoUsuario,
+              icon: const Icon(Icons.person_add),
+              label: const Text('Nuevo usuario'),
+            ),
+          ],
           const SizedBox(height: 16),
           Expanded(
             child: _cargando

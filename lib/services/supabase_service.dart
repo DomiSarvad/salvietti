@@ -7,6 +7,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class SupabaseService {
   static SupabaseClient get client => Supabase.instance.client;
 
+  /// Límite máximo de espera para cualquier lectura online. Sin esto, si
+  /// no hay internet real (aunque el dispositivo crea tener red, p. ej.
+  /// wifi sin salida) el pedido puede quedar colgado indefinidamente y la
+  /// pantalla no vuelve a mostrar el spinner nunca — rompiendo el
+  /// requisito de poder trabajar con o sin conexión.
+  static const timeoutRed = Duration(seconds: 8);
+
   static Future<void> init() async {
     await dotenv.load(fileName: '.env');
     await Supabase.initialize(

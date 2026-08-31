@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import '../models/movimiento.dart';
@@ -22,6 +23,7 @@ class HiveService {
     await Hive.openBox(HiveBoxes.materiaPrima);
     await Hive.openBox(HiveBoxes.colaMovimientos);
     await Hive.openBox(HiveBoxes.sesion);
+    await Hive.openBox(HiveBoxes.perfilPendiente);
   }
 
   static Box _boxCatalogo(String tabla) {
@@ -82,4 +84,24 @@ class HiveService {
 
   static String? ultimoEmail() =>
       Hive.box(HiveBoxes.sesion).get('ultimo_email');
+
+  // -------------------- Foto de perfil pendiente de subir ------------------
+
+  static Future<void> guardarFotoPendiente(
+      String usuarioId, Uint8List bytes, String ext) async {
+    await Hive.box(HiveBoxes.perfilPendiente)
+        .put('foto', {'usuarioId': usuarioId, 'bytes': bytes, 'ext': ext});
+  }
+
+  static Map<String, dynamic>? fotoPendiente() {
+    final valor = Hive.box(HiveBoxes.perfilPendiente).get('foto');
+    return valor == null ? null : Map<String, dynamic>.from(valor);
+  }
+
+  static Future<void> limpiarFotoPendiente() async {
+    await Hive.box(HiveBoxes.perfilPendiente).delete('foto');
+  }
+
+  static bool get hayFotoPendiente =>
+      Hive.box(HiveBoxes.perfilPendiente).containsKey('foto');
 }

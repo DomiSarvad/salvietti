@@ -17,7 +17,8 @@ class InventarioService {
     try {
       var query = SupabaseService.client.from(tabla).select();
       if (soloActivos) query = query.eq('activo', true);
-      final data = await query.order('detalle');
+      final data =
+          await query.order('detalle').timeout(SupabaseService.timeoutRed);
       final lista = List<Map<String, dynamic>>.from(data);
       await HiveService.guardarCatalogo(tabla, lista);
       return lista.map((m) => Insumo.fromMap(m, tabla)).toList();
@@ -74,6 +75,41 @@ class InventarioService {
       usuarioId: usuarioId,
       motivo: motivo,
     );
+  }
+
+  /// Proveedores ya conocidos (para el buscador tipo autocompletar de
+  /// los formularios): junta los que aparecen como "proveedor habitual"
+  /// de materia prima y los que se cargaron en movimientos anteriores.
+  /// Si no hay ninguno que coincida con lo que se escribe, el propio
+  /// campo permite registrar uno nuevo escribiéndolo directamente.
+  static Future<List<String>> listarProveedores() async {
+    try {
+      final resultados = await Future.wait([
+        SupabaseService.client
+            .from('materia_prima')
+            .select('proveedor_habitual')
+            .not('proveedor_habitual', 'is', null)
+            .timeout(SupabaseService.timeoutRed),
+        SupabaseService.client
+            .from('movimientos')
+            .select('proveedor')
+            .not('proveedor', 'is', null)
+            .timeout(SupabaseService.timeoutRed),
+      ]);
+      final vistos = <String>{};
+      for (final fila in List<Map<String, dynamic>>.from(resultados[0])) {
+        final p = (fila['proveedor_habitual'] as String?)?.trim();
+        if (p != null && p.isNotEmpty) vistos.add(p);
+      }
+      for (final fila in List<Map<String, dynamic>>.from(resultados[1])) {
+        final p = (fila['proveedor'] as String?)?.trim();
+        if (p != null && p.isNotEmpty) vistos.add(p);
+      }
+      final lista = vistos.toList()..sort();
+      return lista;
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Registra un movimiento (entrada/salida/ajuste). Si hay conexión se

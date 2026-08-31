@@ -25,8 +25,13 @@ class SalviettiApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()..recuperarSesion()),
-        ChangeNotifierProvider(
-            create: (_) => SyncService()..iniciarMonitoreo()),
+        // Proxy en vez de Provider simple: SyncService necesita poder
+        // pedirle a AuthService que suba la foto de perfil pendiente al
+        // reconectar (ver SyncService.vincularAuth).
+        ChangeNotifierProxyProvider<AuthService, SyncService>(
+          create: (_) => SyncService()..iniciarMonitoreo(),
+          update: (_, auth, sync) => sync!..vincularAuth(auth),
+        ),
       ],
       child: MaterialApp(
         title: 'Salvietti Control',

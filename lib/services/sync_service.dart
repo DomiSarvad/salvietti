@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'auth_service.dart';
 import 'hive_service.dart';
 import 'supabase_service.dart';
 
@@ -22,6 +23,13 @@ class SyncService extends ChangeNotifier {
   bool get online => _online;
 
   StreamSubscription? _sub;
+  AuthService? _authService;
+
+  /// Se llama desde el `ChangeNotifierProxyProvider` en main.dart para que
+  /// esta clase pueda pedirle a AuthService que suba la foto de perfil
+  /// pendiente al sincronizar (sin que SyncService dependa de construir
+  /// su propia instancia de AuthService).
+  void vincularAuth(AuthService auth) => _authService = auth;
 
   void iniciarMonitoreo() {
     _sub = Connectivity().onConnectivityChanged.listen((results) async {
@@ -40,7 +48,8 @@ class SyncService extends ChangeNotifier {
     super.dispose();
   }
 
-  int get pendientes => HiveService.cantidadPendientes;
+  int get pendientes =>
+      HiveService.cantidadPendientes + (HiveService.hayFotoPendiente ? 1 : 0);
 
   /// Sube toda la cola pendiente a Supabase. Se puede invocar manualmente
   /// (botón "Subir todo") o automáticamente al recuperar conexión.
@@ -66,6 +75,8 @@ class SyncService extends ChangeNotifier {
         fallidos++; // se queda en la cola para el próximo intento
       }
     }
+
+    await _authService?.sincronizarFotoPendiente();
 
     _sincronizando = false;
     notifyListeners();

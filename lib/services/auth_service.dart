@@ -1,15 +1,23 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants.dart';
 import '../models/usuario.dart';
 import 'supabase_service.dart';
 import 'bitacora_service.dart';
+import 'datos_empleado_service.dart';
 import 'hive_service.dart';
+import 'permisos_service.dart';
 
-/// Cuenta intentos fallidos de login por correo, para el bloqueo temporal.
-class _IntentoLogin {
-  int fallos = 0;
-  DateTime? bloqueadoHasta;
+/// Resultado de un intento de inicio de sesión. Si [segundosEspera] no es
+/// null, hay un bloqueo temporal en curso: la pantalla arma su propia
+/// cuenta regresiva con ese número (el servidor no la "empuja" segundo a
+/// segundo, solo informa cuánto falta en el momento de esta respuesta).
+class ResultadoLogin {
+  final String? error;
+  final int? segundosEspera;
+  const ResultadoLogin({this.error, this.segundosEspera});
+  bool get ok => error == null && segundosEspera == null;
 }
 
 /// Regex de correo razonablemente estricta (evita símbolos inválidos,
@@ -21,14 +29,20 @@ final RegExp _emailValido =
 /// Se registra en la bitácora de acciones cada inicio de sesión, tal como
 /// piden los casos de uso ("saber qué usuario entra y qué hace").
 class AuthService extends ChangeNotifier {
-  static const _maxIntentos = 5;
-  static const _bloqueoDuracion = Duration(seconds: 60);
-
-  final Map<String, _IntentoLogin> _intentos = {};
-
   Usuario? _usuarioActual;
   Usuario? get usuarioActual => _usuarioActual;
   bool get autenticado => _usuarioActual != null;
+
+  /// El empleado todavía no completó sus datos personales obligatorios: la app
+  /// le muestra "Completá tus datos" y no lo deja pasar hasta guardarlos.
+  bool _datosPendientes = false;
+  bool get datosPendientes => _datosPendientes;
+
+  /// Se llama al guardar los datos obligatorios.
+  void datosCompletados() {
+    _datosPendientes = false;
+    notifyListeners();
+  }
 
   /// Foto elegida sin conexión, todavía no subida a Supabase Storage.
   /// Mientras exista, la UI la muestra en vez de `usuario.avatarUrl`
@@ -55,33 +69,61 @@ class AuthService extends ChangeNotifier {
     return null;
   }
 
-  String _registrarFallo(_IntentoLogin intento, String mensaje) {
-    intento.fallos++;
-    if (intento.fallos >= _maxIntentos) {
-      intento.bloqueadoHasta = DateTime.now().add(_bloqueoDuracion);
-      return 'Demasiados intentos fallidos. Espera '
-          '${_bloqueoDuracion.inSeconds} segundos e inténtalo de nuevo.';
+  /// Bloqueo escalonado por intentos fallidos: lo lleva el servidor (tabla
+  /// `intentos_login`, función v23), por correo — así resiste cerrar la app
+  /// y protege igual si prueban desde otro dispositivo. 5 fallos bloquean
+  /// 30s, 10 fallos 2min, 15 fallos 10min, 20 fallos 30min, 25 fallos
+  /// bloquean la cuenta hasta que el Gerente la desbloquee.
+  Future<Map<String, dynamic>?> _estadoBloqueo(String correo) async {
+    try {
+      final r = await SupabaseService.client
+          .rpc('intentos_login_estado', params: {'p_email': correo})
+          .timeout(SupabaseService.timeoutRed);
+      return Map<String, dynamic>.from(r as Map);
+    } catch (_) {
+      // Sin la migración v23 o sin conexión: no se bloquea el ingreso por
+      // esto, el error real (si lo hay) lo va a dar signInWithPassword.
+      return null;
     }
-    final restantes = _maxIntentos - intento.fallos;
-    return '$mensaje ($restantes intento${restantes == 1 ? '' : 's'} '
-        'restante${restantes == 1 ? '' : 's'})';
   }
 
-  Future<String?> iniciarSesion(String email, String password) async {
+  ResultadoLogin _resultadoBloqueo(Map<String, dynamic> estado) {
+    if (estado['permanente'] == true) {
+      return const ResultadoLogin(
+          error: 'Esta cuenta quedó bloqueada por demasiados intentos fallidos. '
+              'Solo el Gerente puede desbloquearla.');
+    }
+    return ResultadoLogin(segundosEspera: (estado['espera_segundos'] as num?)?.toInt() ?? 60);
+  }
+
+  /// Registra el fallo en el servidor y arma el resultado: bloqueo si
+  /// corresponde, o el mensaje simple con los intentos que quedan.
+  Future<ResultadoLogin> _registrarFallo(String correo, String mensaje) async {
+    try {
+      final r = await SupabaseService.client
+          .rpc('intentos_login_registrar_fallo', params: {'p_email': correo})
+          .timeout(SupabaseService.timeoutRed);
+      final estado = Map<String, dynamic>.from(r as Map);
+      if (estado['permitido'] == false) return _resultadoBloqueo(estado);
+      final restantes = (estado['intentos_restantes'] as num?)?.toInt();
+      if (restantes == null) return ResultadoLogin(error: mensaje);
+      return ResultadoLogin(
+          error: '$mensaje ($restantes intento${restantes == 1 ? '' : 's'} '
+              'restante${restantes == 1 ? '' : 's'})');
+    } catch (_) {
+      return ResultadoLogin(error: mensaje); // sin v23 o sin conexión: mensaje simple
+    }
+  }
+
+  Future<ResultadoLogin> iniciarSesion(String email, String password) async {
     final correo = email.trim().toLowerCase();
 
     final errorFormato = _validarCredenciales(correo, password);
-    if (errorFormato != null) return errorFormato;
+    if (errorFormato != null) return ResultadoLogin(error: errorFormato);
 
-    final intento = _intentos.putIfAbsent(correo, () => _IntentoLogin());
-    if (intento.bloqueadoHasta != null) {
-      final restante = intento.bloqueadoHasta!.difference(DateTime.now());
-      if (restante > Duration.zero) {
-        return 'Demasiados intentos fallidos. Espera '
-            '${restante.inSeconds} segundos e inténtalo de nuevo.';
-      }
-      intento.bloqueadoHasta = null;
-      intento.fallos = 0;
+    final estadoPrevio = await _estadoBloqueo(correo);
+    if (estadoPrevio != null && estadoPrevio['permitido'] == false) {
+      return _resultadoBloqueo(estadoPrevio);
     }
 
     try {
@@ -89,17 +131,33 @@ class AuthService extends ChangeNotifier {
           .signInWithPassword(email: correo, password: password)
           .timeout(SupabaseService.timeoutRed);
       if (res.user == null) {
-        return _registrarFallo(intento, 'No se pudo iniciar sesión.');
+        return await _registrarFallo(correo, 'No se pudo iniciar sesión.');
       }
       await _cargarPerfil(res.user!.id);
+      if (_usuarioActual != null && !_usuarioActual!.activo) {
+        await SupabaseService.client.auth.signOut();
+        _usuarioActual = null;
+        notifyListeners();
+        return const ResultadoLogin(
+            error: 'Tu cuenta está desactivada. Comunicate con el Gerente.');
+      }
       await BitacoraService.registrarAccion(
         usuarioId: res.user!.id,
         accion: 'login',
       );
-      _intentos.remove(correo);
-      return null; // sin error
+      try {
+        await SupabaseService.client
+            .rpc('intentos_login_registrar_exito', params: {'p_email': correo})
+            .timeout(SupabaseService.timeoutRed);
+      } catch (_) {
+        // No es crítico: si falla, el próximo ingreso correcto lo limpia igual.
+      }
+      return const ResultadoLogin(); // sin error
     } on Object catch (e) {
-      return _registrarFallo(intento, _mensajeError(e));
+      final mensaje = _mensajeError(e);
+      // Un problema de red no es un intento fallido de contraseña.
+      if (mensaje.startsWith('No se pudo conectar')) return ResultadoLogin(error: mensaje);
+      return await _registrarFallo(correo, mensaje);
     }
   }
 
@@ -109,7 +167,16 @@ class AuthService extends ChangeNotifier {
         .select()
         .eq('id', userId)
         .single();
-    _usuarioActual = Usuario.fromMap(data);
+    final perfil = Usuario.fromMap(data);
+    _usuarioActual = perfil.conPermisos(await PermisosService.delRol(perfil.rol));
+    // ¿Completó sus datos personales? Si no se puede consultar (sin conexión, o
+    // la tabla todavía no existe) no se bloquea el ingreso.
+    try {
+      final datos = await DatosEmpleadoService.obtener(userId);
+      _datosPendientes = _usuarioActual!.activo && !(datos?.completo ?? false);
+    } catch (_) {
+      _datosPendientes = false;
+    }
     _restaurarFotoPendienteLocal();
     notifyListeners();
   }
@@ -127,6 +194,11 @@ class AuthService extends ChangeNotifier {
     final user = SupabaseService.currentUser;
     if (user != null) {
       await _cargarPerfil(user.id);
+      if (_usuarioActual != null && !_usuarioActual!.activo) {
+        await SupabaseService.client.auth.signOut();
+        _usuarioActual = null;
+        notifyListeners();
+      }
     }
   }
 
@@ -181,6 +253,16 @@ class AuthService extends ChangeNotifier {
       await SupabaseService.client.auth.signOut();
       return null;
     } on Object catch (e) {
+      // Si verifyOTP ya abrió la sesión de recuperación y lo que falló fue
+      // el cambio de contraseña (red, validación del servidor), esa sesión
+      // temporal queda activa igual — sin cerrarla, reabrir la app antes de
+      // reintentar dejaría entrar sin haber cambiado nada.
+      try {
+        await SupabaseService.client.auth.signOut();
+      } catch (_) {
+        // Sin sesión que cerrar (verifyOTP nunca llegó a abrir una) u otro
+        // error de red acá: no tapa el mensaje real de abajo.
+      }
       return _mensajeError(e);
     }
   }
@@ -214,6 +296,7 @@ class AuthService extends ChangeNotifier {
         area: _usuarioActual!.area,
         activo: _usuarioActual!.activo,
         avatarUrl: avatarUrl ?? _usuarioActual!.avatarUrl,
+        permisos: _usuarioActual!.permisos,
       );
       notifyListeners();
       return null;
@@ -294,6 +377,7 @@ class AuthService extends ChangeNotifier {
     }
     await SupabaseService.client.auth.signOut();
     _usuarioActual = null;
+    _datosPendientes = false;
     notifyListeners();
   }
 
@@ -338,11 +422,66 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Edición de un usuario por el Gerente (nombre, correo, rol, área y estado).
+  /// El cambio de correo se hace en el servidor (función
+  /// `editar_usuario_admin`), porque el correo vive en la cuenta de acceso.
+  Future<String?> editarUsuario({
+    required String id,
+    required String email,
+    required String nombreCompleto,
+    required String rol,
+    String? area,
+    required bool activo,
+  }) async {
+    if (_usuarioActual == null || !_usuarioActual!.puedeCrearUsuarios) {
+      return 'No tiene permisos para editar usuarios.';
+    }
+    final correo = email.trim().toLowerCase();
+    final nombre = nombreCompleto.trim();
+    if (nombre.isEmpty) return 'El nombre completo es obligatorio.';
+    if (nombre.length > 120) return 'El nombre completo es demasiado largo.';
+    if (correo.isEmpty) return 'Ingresá el correo.';
+    if (!Rol.todos.contains(rol)) return 'Rol inválido.';
+    try {
+      await SupabaseService.client.rpc('editar_usuario_admin', params: {
+        'p_id': id,
+        'p_email': correo,
+        'p_nombre_completo': nombre,
+        'p_rol': rol,
+        'p_area': area,
+        'p_activo': activo,
+      }).timeout(SupabaseService.timeoutRed);
+      // Si el Gerente se edita a sí mismo, se refresca su propio perfil.
+      if (id == _usuarioActual!.id) {
+        await _cargarPerfil(id);
+      }
+      return null;
+    } on Object catch (e) {
+      return _mensajeError(e);
+    }
+  }
+
   String _mensajeError(Object e) {
-    if (e is PostgrestException) return e.message;
+    if (e is PostgrestException) {
+      if (e.code == 'PGRST202' || e.message.contains('Could not find the function')) {
+        return 'Falta ejecutar schema_v14_roles_y_edicion_usuarios.sql en Supabase.';
+      }
+      return e.message;
+    }
     final s = e.toString();
     if (s.contains('Invalid login credentials')) {
       return 'Correo o contraseña incorrectos.';
+    }
+    // Falla de red real (sin internet, DNS, servidor inalcanzable) — no
+    // es un error de credenciales, así que no tiene sentido mostrar la
+    // excepción técnica cruda ("Failed to fetch", etc.).
+    if (e is AuthRetryableFetchException ||
+        e is TimeoutException ||
+        s.contains('Failed to fetch') ||
+        s.contains('SocketException') ||
+        s.contains('ClientException')) {
+      return 'No se pudo conectar. Revisa tu conexión a internet e '
+          'intenta de nuevo.';
     }
     return 'Error: $s';
   }

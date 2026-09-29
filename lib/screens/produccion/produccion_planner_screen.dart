@@ -6,7 +6,7 @@ import '../../models/produccion.dart';
 import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
 import '../../utils/formatters.dart';
-import '../../utils/responsive.dart';
+import 'constructor_plan_dialog.dart';
 import 'editar_consumo_dialog.dart';
 import 'produccion_captura_dialog.dart';
 import 'productos_catalogo_dialog.dart';
@@ -18,7 +18,11 @@ import 'productos_catalogo_dialog.dart';
 /// descuenta automáticamente materia prima, preformas y tapas (trigger
 /// en BD). Es el único rol que edita este plan.
 class ProduccionPlannerScreen extends StatefulWidget {
-  const ProduccionPlannerScreen({super.key});
+  /// Al tocar un producto de la lista, si esto está definido, se navega a
+  /// Jarabes con ese sabor listo para calcular el preparado (en vez de
+  /// tener que ir a Jarabes y buscarlo de nuevo ahí).
+  final void Function(String sabor)? onIrAJarabes;
+  const ProduccionPlannerScreen({super.key, this.onIrAJarabes});
   @override
   State<ProduccionPlannerScreen> createState() =>
       _ProduccionPlannerScreenState();
@@ -53,149 +57,65 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
     });
   }
 
-  /// El Jefe de Producción elige el PRODUCTO (buscador, igual que con los
-  /// insumos) y cuántos PAQUETES/CAJAS van a salir — litros y botellas se
-  /// calculan solos a partir de la ficha del producto, tal como en el
-  /// reporte que ya manejan. Si el producto no tiene definida la cantidad
-  /// de botellas por paquete, se puede cargar la cantidad de botellas
-  /// directamente.
-  Future<void> _agregarProducto() async {
-    ProductoTerminado? producto;
-    final paquetesCtrl = TextEditingController();
-    final botellasCtrl = TextEditingController();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          final porPaquete = producto?.botellasPorPaquete;
-          double? botellas;
-          if (producto != null) {
-            botellas = porPaquete != null
-                ? (double.tryParse(paquetesCtrl.text) ?? 0) * porPaquete
-                : double.tryParse(botellasCtrl.text);
-          }
-          final litros =
-              (producto != null && botellas != null && botellas > 0)
-                  ? botellas * producto!.litrosPorBotella
-                  : null;
-
-          return AlertDialog(
-            title: const Text('Agregar producto al plan del día'),
-            content: SizedBox(
-              width: anchoDialogo(ctx, 380),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_productos.isEmpty)
-                    const Text('Primero cargá al menos un producto desde '
-                        '"Productos".')
-                  else
-                    Autocomplete<ProductoTerminado>(
-                      displayStringForOption: (p) => p.nombre,
-                      optionsBuilder: (v) {
-                        final q = v.text.trim().toLowerCase();
-                        if (q.isEmpty) return _productos;
-                        return _productos
-                            .where((p) => p.nombre.toLowerCase().contains(q));
-                      },
-                      onSelected: (p) => setLocal(() => producto = p),
-                      fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                        return TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          onChanged: (_) => setLocal(() => producto = null),
-                          decoration: const InputDecoration(
-                            labelText: 'Producto *',
-                            hintText: 'Buscar por nombre...',
-                            prefixIcon: Icon(Icons.search),
-                          ),
-                        );
-                      },
-                    ),
-                  if (producto != null) ...[
-                    const SizedBox(height: 12),
-                    if (porPaquete != null)
-                      TextField(
-                        controller: paquetesCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                            labelText: 'Paquetes/Cajas '
-                                '(${fmtNum(porPaquete, decimales: 0)} botellas c/u)'),
-                        onChanged: (_) => setLocal(() {}),
-                      )
-                    else
-                      TextField(
-                        controller: botellasCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Botellas'),
-                        onChanged: (_) => setLocal(() {}),
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                        litros != null
-                            ? '= ${fmtNum(botellas, decimales: 0)} botellas · '
-                                '${fmtNum(litros, decimales: 0)} litros a producir'
-                            : 'Ingresá la cantidad para calcular litros y botellas.',
-                        style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancelar')),
-              FilledButton(
-                  onPressed: (litros != null && litros > 0)
-                      ? () => Navigator.pop(ctx, true)
-                      : null,
-                  child: const Text('Agregar')),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (ok == true && producto != null) {
-      final porPaquete = producto!.botellasPorPaquete;
-      final botellas = porPaquete != null
-          ? (double.tryParse(paquetesCtrl.text) ?? 0) * porPaquete
-          : double.tryParse(botellasCtrl.text) ?? 0;
-      final litros = botellas * producto!.litrosPorBotella;
-      final usuario = context.read<AuthService>().usuarioActual!;
-      await ProduccionService.agregarProductoAlPlan(
-        planId: _plan!.id,
-        producto: producto!,
-        litros: litros,
-        usuarioId: usuario.id,
-      );
-      _cargar();
+  /// Abre la tabla donde el Jefe de Producción arma el plan del día:
+  /// agrega productos, corrige o elimina líneas, y solo al confirmar
+  /// "Guardar plan" esas líneas pasan a la lista de tareas de abajo.
+  Future<void> _armarPlan() async {
+    if (_plan == null) return;
+    if (_productos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Primero cargá al menos un producto desde "Productos".')));
+      return;
     }
+    final guardado = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          ConstructorPlanDialog(planId: _plan!.id, productos: _productos),
+    );
+    if (guardado == true) _cargar();
   }
 
+  /// Si [d] ya está completado (por ejemplo, porque Jarabes lo marcó solo
+  /// al finalizar el preparado con una estimación), reabre este mismo
+  /// diálogo precargado con lo que ya se guardó, para corregir botellas o
+  /// merma con el dato real una vez que se termina de embotellar — no
+  /// vuelve a descontar stock (el trigger del servidor solo descuenta en
+  /// la primera vez que pasa a completado).
   Future<void> _marcarCompletado(PlanProduccionDetalle d) async {
     final usuario = context.read<AuthService>().usuarioActual!;
     final estimado = d.litrosPorBotella != null && d.litrosPorBotella! > 0
         ? (d.litrosPlanificados / d.litrosPorBotella!).round()
         : null;
-    final botellasCtrl =
-        TextEditingController(text: estimado?.toString() ?? '');
-    final mermaCtrl = TextEditingController(text: '0');
+    // fmtNum(null) devuelve "-" (para mostrar en pantalla), que no es un
+    // número válido para precargar un campo editable: si se guardaba sin
+    // tocarlo, pisaba el dato real con 0. Acá, sin dato, el campo queda
+    // vacío en vez de con ese guion.
+    final botellasCtrl = TextEditingController(
+        text: d.completado
+            ? (d.botellasProducidas == null
+                ? ''
+                : d.botellasProducidas!.toStringAsFixed(0))
+            : (estimado?.toString() ?? ''));
+    final mermaCtrl = TextEditingController(
+        text: d.completado ? d.mermaLitros.toStringAsFixed(0) : '0');
 
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Marcar como completado'),
+        title: Text(d.completado ? 'Corregir producción' : 'Marcar como completado'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-                'Se descontará automáticamente la materia prima de "${d.sabor}"'
-                '${d.nombreProducto != null ? ', además de la preforma y tapa de "${d.nombreProducto}"' : ''}. '
-                'Esta acción no se puede deshacer.'),
+            Text(d.completado
+                ? 'Corregí botellas o merma con el dato real, si la estimación no fue exacta. '
+                    'Esto NO vuelve a ajustar el descuento de stock (ya se hizo con el número '
+                    'anterior) — si la diferencia es grande, avisale a Almacén para que la '
+                    'corrija a mano.'
+                : 'Se descontará automáticamente la materia prima de "${d.sabor}"'
+                    '${d.nombreProducto != null ? ', además de la preforma y tapa de "${d.nombreProducto}"' : ''}. '
+                    'Esta acción no se puede deshacer.'),
             const SizedBox(height: 12),
             TextField(
               controller: botellasCtrl,
@@ -215,7 +135,7 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
               child: const Text('Cancelar')),
           FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Confirmar')),
+              child: Text(d.completado ? 'Guardar' : 'Confirmar')),
         ],
       ),
     );
@@ -247,9 +167,10 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
 
   Future<void> _guardarImagen() async {
     if (_plan == null) return;
+    final usuario = context.read<AuthService>().usuarioActual!;
     await showDialog(
       context: context,
-      builder: (_) => ProduccionCapturaDialog(plan: _plan!),
+      builder: (_) => ProduccionCapturaDialog(plan: _plan!, usuario: usuario),
     );
   }
 
@@ -319,9 +240,9 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                 FilledButton.icon(
                   style:
                       FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                  onPressed: _agregarProducto,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar producto'),
+                  onPressed: _armarPlan,
+                  icon: const Icon(Icons.table_chart_outlined),
+                  label: const Text('Armar plan'),
                 ),
               ],
             ],
@@ -332,6 +253,12 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
               'descuenta automáticamente materia prima, preformas y tapas '
               'según la receta y las botellas producidas.',
               style: TextStyle(color: Colors.grey.shade600)),
+          if (widget.onIrAJarabes != null) ...[
+            const SizedBox(height: 4),
+            Text('Tocá el ícono de gota, o el producto, para ir a Jarabes con '
+                'ese sabor listo para calcular el preparado.',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          ],
           const SizedBox(height: 16),
           Expanded(
             child: _plan == null || _plan!.detalle.isEmpty
@@ -340,6 +267,9 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                     children: _plan!.detalle
                         .map((d) => Card(
                               child: ListTile(
+                                onTap: widget.onIrAJarabes == null
+                                    ? null
+                                    : () => widget.onIrAJarabes!(d.sabor),
                                 leading: Icon(
                                   d.completado
                                       ? Icons.check_circle
@@ -356,15 +286,34 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                                     ? '${fmtNum(d.botellasProducidas, decimales: 0)} botellas producidas'
                                         '${d.mermaLitros > 0 ? ' · merma: ${fmtNum(d.mermaLitros, decimales: 0)} L' : ''}'
                                     : '${d.litrosPlanificados.toStringAsFixed(0)} litros planificados'),
-                                trailing: d.completado
-                                    ? const Chip(label: Text('Completado'))
-                                    : (usuario.puedeEditarProduccion
-                                        ? ElevatedButton(
-                                            onPressed: () => _marcarCompletado(d),
-                                            child: const Text('Marcar hecho'),
-                                          )
-                                        : const Text('Pendiente',
-                                            style: TextStyle(color: Colors.grey))),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (widget.onIrAJarabes != null)
+                                      IconButton(
+                                        tooltip: 'Ir a Jarabes a calcular el preparado',
+                                        icon: const Icon(Icons.water_drop_outlined,
+                                            color: AppColors.primario),
+                                        onPressed: () => widget.onIrAJarabes!(d.sabor),
+                                      ),
+                                    if (d.completado)
+                                      usuario.puedeEditarProduccion
+                                          ? ActionChip(
+                                              label: const Text('Completado'),
+                                              avatar: const Icon(Icons.edit_outlined, size: 16),
+                                              onPressed: () => _marcarCompletado(d),
+                                            )
+                                          : const Chip(label: Text('Completado'))
+                                    else if (usuario.puedeEditarProduccion)
+                                      ElevatedButton(
+                                        onPressed: () => _marcarCompletado(d),
+                                        child: const Text('Marcar hecho'),
+                                      )
+                                    else
+                                      const Text('Pendiente',
+                                          style: TextStyle(color: Colors.grey)),
+                                  ],
+                                ),
                               ),
                             ))
                         .toList(),

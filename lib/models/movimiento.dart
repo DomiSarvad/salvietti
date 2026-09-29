@@ -24,6 +24,12 @@ class Movimiento {
   final String usuarioId;
   final DateTime creadoEn;
   final String? revierteMovimientoId; // si esta fila deshace a otra
+  /// 'manual' o 'importacion_excel' (cargado desde un Excel).
+  final String origen;
+  /// Movimiento de historial que NO modifica el stock (importaciones cuyo
+  /// stock ya estaba cargado).
+  final bool soloHistorial;
+  final String? importacionId; // agrupa las filas de una misma importación
   bool sincronizado;
 
   Movimiento({
@@ -44,6 +50,9 @@ class Movimiento {
     required this.usuarioId,
     DateTime? creadoEn,
     this.revierteMovimientoId,
+    this.origen = 'manual',
+    this.soloHistorial = false,
+    this.importacionId,
     this.sincronizado = false,
   })  : offlineUuid = offlineUuid ?? _uuid.v4(),
         creadoEn = creadoEn ?? DateTime.now();
@@ -67,6 +76,13 @@ class Movimiento {
         'created_at': creadoEn.toIso8601String(),
         if (revierteMovimientoId != null)
           'revierte_movimiento_id': revierteMovimientoId,
+        // Solo se envían si es una importación: así los movimientos manuales
+        // siguen funcionando aunque la migración v13 no esté aplicada.
+        if (origen != 'manual') ...{
+          'origen': origen,
+          'solo_historial': soloHistorial,
+          'importacion_id': importacionId,
+        },
       };
 
   Map<String, dynamic> toHiveMap() => {
@@ -109,6 +125,9 @@ class Movimiento {
         usuarioId: m['usuario_id'] ?? '',
         creadoEn: DateTime.parse(m['created_at']),
         revierteMovimientoId: m['revierte_movimiento_id'],
+        origen: m['origen'] ?? 'manual',
+        soloHistorial: m['solo_historial'] ?? false,
+        importacionId: m['importacion_id'],
         sincronizado: true,
       );
 

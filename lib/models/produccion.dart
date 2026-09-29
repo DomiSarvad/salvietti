@@ -66,6 +66,7 @@ class PlanProduccionDetalle {
   final String sabor; // denormalizado para mostrar fácil en UI
   final String? nombreProducto; // denormalizado, ej. "2,5 L Papaya - Pett"
   final double? litrosPorBotella; // denormalizado, para estimar botellas
+  final double? botellasPorPaquete; // denormalizado, para desglosar paquetes/cajas
   final double litrosPlanificados;
   final double? litrosProducidos;
   final double? botellasProducidas;
@@ -80,6 +81,7 @@ class PlanProduccionDetalle {
     required this.sabor,
     this.nombreProducto,
     this.litrosPorBotella,
+    this.botellasPorPaquete,
     required this.litrosPlanificados,
     this.litrosProducidos,
     this.botellasProducidas,
@@ -99,6 +101,9 @@ class PlanProduccionDetalle {
             : null,
         litrosPorBotella: m['productos_terminados'] != null
             ? (m['productos_terminados']['litros_por_botella'] as num?)?.toDouble()
+            : null,
+        botellasPorPaquete: m['productos_terminados'] != null
+            ? (m['productos_terminados']['botellas_por_paquete'] as num?)?.toDouble()
             : null,
         litrosPlanificados: (m['litros_planificados'] as num).toDouble(),
         litrosProducidos: (m['litros_producidos'] as num?)?.toDouble(),

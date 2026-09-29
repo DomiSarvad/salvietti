@@ -2,26 +2,94 @@ import 'package:flutter/material.dart';
 
 /// Roles del sistema — deben coincidir EXACTO con el check constraint
 /// de la tabla `usuarios` en Supabase (rol) y con las políticas RLS.
+///
+/// Organigrama: Gerente General → Producción → (Almacén, Jarabes, Soplado,
+/// Llenadora, Codificación, Registro de Salidas, Control de Calidad).
+/// Los cargos nuevos arrancan en solo lectura; sus permisos propios se
+/// agregan al implementar el módulo de cada área.
 class Rol {
   static const almacen = 'almacen'; // control total
-  static const gerente = 'gerente'; // solo observación + alta de usuarios
+  static const gerente = 'gerente'; // Gerente General: observación + usuarios
   static const jefeProduccion = 'jefe_produccion'; // planifica producción
-  static const jarabes = 'jarabes'; // restringido a su área
+  static const jarabes = 'jarabes'; // Jefe de Jarabes: restringido a su área
+  static const ayudanteJarabes = 'ayudante_jarabes'; // mismo alcance que Jarabes
+  static const controlCalidad = 'control_calidad';
+  static const soplado = 'soplado';
+  static const codificacion = 'codificacion';
+  static const llenadora = 'llenadora';
+  static const registroSalidas = 'registro_salidas';
+  static const sodaCaustica = 'soda_caustica';
 
-  static const todos = [almacen, gerente, jefeProduccion, jarabes];
+  /// Ordenados por área, tal como se muestran en el selector.
+  static const todos = [
+    gerente,
+    jefeProduccion,
+    almacen,
+    jarabes,
+    ayudanteJarabes,
+    soplado,
+    llenadora,
+    codificacion,
+    registroSalidas,
+    controlCalidad,
+    sodaCaustica,
+  ];
 
   static String etiqueta(String rol) {
     switch (rol) {
       case almacen:
         return 'Encargado de Almacén';
       case gerente:
-        return 'Gerente';
+        return 'Gerente General';
       case jefeProduccion:
         return 'Jefe de Producción';
       case jarabes:
-        return 'Encargado de Jarabes';
+        return 'Jefe de Jarabes';
+      case ayudanteJarabes:
+        return 'Ayudante de Jarabes';
+      case controlCalidad:
+        return 'Encargado de Control de Calidad';
+      case soplado:
+        return 'Encargado de Soplado';
+      case codificacion:
+        return 'Encargado de Codificación';
+      case llenadora:
+        return 'Encargado de Llenadora';
+      case registroSalidas:
+        return 'Encargado de Registro de Salidas';
+      case sodaCaustica:
+        return 'Encargado de Soda Cáustica';
       default:
         return rol;
+    }
+  }
+
+  /// Área del organigrama a la que pertenece el cargo.
+  static String area(String rol) {
+    switch (rol) {
+      case gerente:
+        return 'Gerencia';
+      case jefeProduccion:
+        return 'Producción';
+      case almacen:
+        return 'Producción · Almacén';
+      case jarabes:
+      case ayudanteJarabes:
+        return 'Producción · Jarabes';
+      case soplado:
+        return 'Producción · Soplado';
+      case llenadora:
+        return 'Producción · Llenadora';
+      case codificacion:
+        return 'Producción · Codificación';
+      case registroSalidas:
+        return 'Producción · Registro de Salidas';
+      case controlCalidad:
+        return 'Producción · Control de Calidad';
+      case sodaCaustica:
+        return 'Producción · Soda Cáustica';
+      default:
+        return '';
     }
   }
 }
@@ -64,6 +132,45 @@ class SemaforoStock {
 class Validacion {
   static const passwordMin = 6;
   static const passwordMax = 10;
+  // 254 es el máximo técnico (RFC 5321), pero en la práctica ningún correo
+  // real se acerca a eso: 100 alcanza de sobra y evita un contador que
+  // parece pedir un texto larguísimo.
+  static const emailMax = 100;
+}
+
+/// Las cuatro áreas de inventario, cada una con un color y un ícono propios
+/// que se repiten en el dashboard, los gráficos y la lista de inventario
+/// para que se identifiquen a simple vista. Los tonos siguen la paleta de la
+/// app (verde, dorado, carbón); el ámbar y el rojo quedan reservados al
+/// semáforo de stock.
+class AreaInventario {
+  final String id; // 'tapas' | 'preformas' | 'materia_prima' | 'jarabes'
+  final String etiqueta;
+  final String tabla; // tabla en la base de datos
+  final Color color;
+  final IconData icono;
+  const AreaInventario(this.id, this.etiqueta, this.tabla, this.color, this.icono);
+
+  static const tapas = AreaInventario(
+      'tapas', 'Tapas', 'tapas', Color(0xFF1B5E3A), Icons.adjust);
+  static const preformas = AreaInventario('preformas', 'Preformas', 'preformas',
+      Color(0xFFC99A2E), Icons.local_drink_outlined);
+  static const materiaPrima = AreaInventario('materia_prima', 'Materia Prima',
+      'materia_prima', Color(0xFF37474F), Icons.grain);
+  static const jarabes = AreaInventario('jarabes', 'Jarabes', 'materia_prima',
+      Color(0xFF43A27B), Icons.water_drop_outlined);
+
+  static const todas = [tapas, preformas, materiaPrima, jarabes];
+
+  static AreaInventario porId(String id) =>
+      todas.firstWhere((a) => a.id == id, orElse: () => tapas);
+
+  /// Área de un ítem según su tabla y su campo `area` (los jarabes son
+  /// materia prima marcada con área "jarabes").
+  static AreaInventario deItem(String tabla, String? area) {
+    if (tabla == 'materia_prima') return area == 'jarabes' ? jarabes : materiaPrima;
+    return porId(tabla);
+  }
 }
 
 /// Nombres de "cajas" (boxes) de Hive para el almacenamiento offline.
@@ -82,5 +189,15 @@ class AppColors {
   // para alertas/estados críticos (ver SemaforoStock), no como color de marca.
   static const primario = Color(0xFF1B5E3A); // verde Salvietti (sobrio)
   static const secundario = Color(0xFFC99A2E); // dorado, acento de marca
+  static const negro = Color(0xFF0E1512); // negro con base verde, no gris frío
   static const fondo = Color(0xFFF5F7FA);
+
+  // Degradado verde→negro para encabezados/banners "dinámicos" (diálogos
+  // de usuario/perfil, títulos destacados): mantiene los 3 colores de marca
+  // (negro-verde-blanco) sin depender de una sola pantalla.
+  static const gradientePrincipal =
+      LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [
+    primario,
+    negro,
+  ]);
 }

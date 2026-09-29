@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_chrome.dart';
 import '../widgets/app_sidebar.dart';
-import 'dashboard/dashboard_screen.dart';
-import 'estadisticas/estadisticas_screen.dart';
-import 'inventario/inventario_list_screen.dart';
+import '../features/dashboard/screens/dashboard_screen.dart';
+import '../features/inventario/screens/almacenes_screen.dart';
+import '../features/recepciones/screens/recepciones_screen.dart';
+import '../features/entregas/screens/entregas_screen.dart';
+import '../features/solicitudes/screens/solicitudes_screen.dart';
+import '../features/soplado/screens/soplado_screen.dart';
+import '../features/jarabes/screens/jarabes_screen.dart';
+import '../features/calidad/screens/calidad_screen.dart';
+import '../features/llenadora/screens/llenadora_screen.dart';
+import '../features/codificacion/screens/codificacion_screen.dart';
+import '../features/registro_salidas/screens/salidas_screen.dart';
+import '../features/mermas/screens/mermas_screen.dart';
+import '../features/soda_caustica/screens/soda_screen.dart';
+import '../features/informe_gerente/screens/informe_screen.dart';
 import 'produccion/produccion_planner_screen.dart';
-import 'reportes/reportes_screen.dart';
 import 'historial/historial_screen.dart';
 import 'usuarios/usuarios_screen.dart';
 
@@ -22,25 +33,98 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   String _ruta = 'dashboard';
+  // Con qué almacén abre Almacenes al entrar desde una tarjeta del Inicio
+  // (null = el primero que el rol pueda ver, al entrar desde el menú).
+  String? _almacenInicial;
+  // Con qué sabor abre Jarabes (y listo para calcular el preparado) al
+  // entrar desde un producto de Producción del día (null = normal).
+  String? _saborJarabesInicial;
+
+  void _navegar(String ruta) => setState(() {
+        _ruta = ruta;
+        _almacenInicial = null;
+        _saborJarabesInicial = null;
+      });
+
+  void _abrirAlmacen(String almacenId) => setState(() {
+        _ruta = 'almacenes';
+        _almacenInicial = almacenId;
+        _saborJarabesInicial = null;
+      });
+
+  void _abrirJarabesConSabor(String sabor) => setState(() {
+        _ruta = 'jarabes';
+        _almacenInicial = null;
+        _saborJarabesInicial = sabor;
+      });
+
+  void _abrirProduccion() => setState(() {
+        _ruta = 'produccion';
+        _almacenInicial = null;
+        _saborJarabesInicial = null;
+      });
 
   Widget _pantalla() {
     switch (_ruta) {
-      case 'inventario':
-        return const InventarioListScreen();
+      case 'almacenes':
+        return AlmacenesScreen(almacenInicial: _almacenInicial);
+      case 'recepciones':
+        return const RecepcionesScreen();
+      case 'entregas':
+        return const EntregasScreen();
+      case 'solicitudes':
+        return const SolicitudesScreen();
+      case 'soplado':
+        return const SopladoScreen();
+      case 'jarabes':
+        return JarabesScreen(saborInicial: _saborJarabesInicial);
+      case 'calidad':
+        return const CalidadScreen();
+      case 'llenadora':
+        return const LlenadoraScreen();
+      case 'codificacion':
+        return const CodificacionScreen();
+      case 'salidas':
+        return const SalidasScreen();
+      case 'mermas':
+        return const MermasScreen();
+      case 'soda_caustica':
+        return const SodaScreen();
+      case 'informe_gerente':
+        return const InformeScreen();
       case 'produccion':
-        return const ProduccionPlannerScreen();
-      case 'estadisticas':
-        return const EstadisticasScreen();
-      case 'reportes':
-        return const ReportesScreen();
+        return ProduccionPlannerScreen(onIrAJarabes: _abrirJarabesConSabor);
       case 'historial':
         return const HistorialScreen();
       case 'usuarios':
         return const UsuariosScreen();
       default:
-        return const DashboardScreen();
+        return DashboardScreen(
+            onAbrirInventario: _abrirAlmacen, onAbrirProduccion: _abrirProduccion);
     }
   }
+
+  static const _titulos = {
+    'dashboard': 'Inicio',
+    'almacenes': 'Almacenes',
+    'recepciones': 'Recepciones',
+    'entregas': 'Entregas',
+    'solicitudes': 'Solicitudes',
+    'soplado': 'Soplado',
+    'jarabes': 'Jarabes',
+    'calidad': 'Control de Calidad',
+    'llenadora': 'Llenadora',
+    'codificacion': 'Codificación',
+    'salidas': 'Registro de salidas',
+    'mermas': 'Mermas',
+    'soda_caustica': 'Soda Cáustica',
+    'informe_gerente': 'Informe de Producción',
+    'produccion': 'Producción del día',
+    'historial': 'Historial / Bitácora',
+    'usuarios': 'Usuarios',
+  };
+
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
@@ -49,32 +133,63 @@ class _HomeShellState extends State<HomeShell> {
 
     final anchoAngosto = MediaQuery.of(context).size.width < 900;
 
+    // Contenido común: migas de pan + la pantalla de la sección.
+    final contenido = Column(
+      children: [
+        AppBreadcrumb(
+          titulo: _titulos[_ruta] ?? '',
+          esInicio: _ruta == 'dashboard',
+          onInicio: () => _navegar('dashboard'),
+        ),
+        Expanded(child: _pantalla()),
+      ],
+    );
+
     if (anchoAngosto) {
       return Scaffold(
+        key: _scaffoldKey,
         backgroundColor: AppColors.fondo,
-        appBar: AppBar(
-            title: const Text('Salvietti Control'),
-            backgroundColor: AppColors.primario),
         drawer: Drawer(
-          child: AppSidebar(
-            rutaActual: _ruta,
-            onNavegar: (r) {
-              setState(() => _ruta = r);
-              Navigator.pop(context);
-            },
+          backgroundColor: const Color(0xFF17221D),
+          child: SafeArea(
+            child: AppSidebar(
+              rutaActual: _ruta,
+              onNavegar: (r) {
+                _navegar(r);
+                Navigator.pop(context);
+              },
+            ),
           ),
         ),
-        body: _pantalla(),
+        body: SafeArea(
+          child: Column(
+            children: [
+              AppTopBar(
+                onNavegar: _navegar,
+                onMenu: () => _scaffoldKey.currentState?.openDrawer(),
+              ),
+              Expanded(child: contenido),
+              const AppFooter(),
+            ],
+          ),
+        ),
       );
     }
 
     return Scaffold(
       backgroundColor: AppColors.fondo,
-      body: Row(
+      body: Column(
         children: [
-          AppSidebar(
-              rutaActual: _ruta, onNavegar: (r) => setState(() => _ruta = r)),
-          Expanded(child: _pantalla()),
+          AppTopBar(onNavegar: _navegar),
+          Expanded(
+            child: Row(
+              children: [
+                AppSidebar(rutaActual: _ruta, onNavegar: _navegar),
+                Expanded(child: contenido),
+              ],
+            ),
+          ),
+          const AppFooter(),
         ],
       ),
     );

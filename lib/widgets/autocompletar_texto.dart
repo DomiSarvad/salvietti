@@ -9,6 +9,9 @@ class AutocompletarTexto extends StatelessWidget {
   final String? valorInicial;
   final List<String> opciones;
   final ValueChanged<String> onChanged;
+  /// Si se pasa, reemplaza la decoración por defecto (ej. dentro de
+  /// CampoFormulario, donde la etiqueta va sobre el borde).
+  final InputDecoration? decoracion;
 
   const AutocompletarTexto({
     super.key,
@@ -16,6 +19,7 @@ class AutocompletarTexto extends StatelessWidget {
     required this.opciones,
     required this.onChanged,
     this.valorInicial,
+    this.decoracion,
   });
 
   @override
@@ -33,7 +37,7 @@ class AutocompletarTexto extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           onChanged: onChanged,
-          decoration: InputDecoration(labelText: label),
+          decoration: decoracion ?? InputDecoration(labelText: label),
         );
       },
       optionsViewBuilder: (context, onSelected, options) {

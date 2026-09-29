@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:fvp/fvp.dart' as fvp;
+import 'package:toastification/toastification.dart';
 import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/hive_service.dart';
@@ -7,11 +9,15 @@ import 'services/supabase_service.dart';
 import 'services/sync_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home_shell.dart';
+import 'screens/perfil/completar_datos_screen.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 Future<void> main() async {
-  await initializeDateFormatting('es_BO', null);
   WidgetsFlutterBinding.ensureInitialized();
+  // Habilita video_player en Windows/Linux (plataformas sin soporte nativo);
+  // en el resto de plataformas no hace nada.
+  fvp.registerWith();
+  await initializeDateFormatting('es_BO', null);
   await HiveService.init(); // almacenamiento local offline-first
   await SupabaseService.init(); // backend en la nube
   runApp(const SalviettiApp());
@@ -33,15 +39,17 @@ class SalviettiApp extends StatelessWidget {
           update: (_, auth, sync) => sync!..vincularAuth(auth),
         ),
       ],
-      child: MaterialApp(
-        title: 'Salvietti Control',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: AppColors.primario,
-          scaffoldBackgroundColor: AppColors.fondo,
+      child: ToastificationWrapper(
+        child: MaterialApp(
+          title: 'Salvietti Control',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: AppColors.primario,
+            scaffoldBackgroundColor: AppColors.fondo,
+          ),
+          home: const _RaizApp(),
         ),
-        home: const _RaizApp(),
       ),
     );
   }
@@ -54,6 +62,9 @@ class _RaizApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
-    return auth.autenticado ? const HomeShell() : const LoginScreen();
+    if (!auth.autenticado) return const LoginScreen();
+    // Primer ingreso: antes de usar el sistema debe completar sus datos.
+    if (auth.datosPendientes) return const CompletarDatosScreen();
+    return const HomeShell();
   }
 }

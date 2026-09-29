@@ -38,12 +38,16 @@ class InventarioService {
     return resultados.expand((e) => e).toList();
   }
 
-  static Future<void> crear(Insumo insumo, String usuarioId) async {
+  /// [registrarBitacora] = false lo usa la importación desde Excel, que deja
+  /// una sola entrada de bitácora para todo el lote.
+  static Future<String> crear(Insumo insumo, String usuarioId,
+      {bool registrarBitacora = true}) async {
     final inserted = await SupabaseService.client
         .from(insumo.tabla)
         .insert(insumo.toMap())
         .select()
         .single();
+    if (!registrarBitacora) return inserted['id'] as String;
     await BitacoraService.registrarAccion(
       usuarioId: usuarioId,
       accion: 'crear',
@@ -51,6 +55,7 @@ class InventarioService {
       registroId: inserted['id'],
       detalle: {'codigo': inserted['codigo'], 'detalle': insumo.detalle},
     );
+    return inserted['id'] as String;
   }
 
   static Future<void> actualizar(Insumo insumo, String usuarioId) async {

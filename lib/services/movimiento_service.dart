@@ -91,9 +91,15 @@ class MovimientoService {
   /// lote de la planificación diaria) y las reversiones mismas.
   static bool puedeDeshacerse(Movimiento movimiento, double cantidadActualItem) {
     if (movimiento.tipo == 'produccion') return false;
+    // Un movimiento importado "solo historial" nunca tocó el stock: deshacerlo
+    // (que inserta un ajuste) lo modificaría por primera vez.
+    if (movimiento.soloHistorial) return false;
     if (movimiento.revierteMovimientoId != null) return false;
     if (cantidadActualItem <= 0) return false;
-    return movimiento.cantidad <= cantidadActualItem * limiteDeshacerPorcentaje;
+    // Abs: un ajuste NEGATIVO grande (ej. -1000 en un ítem con 5 de stock)
+    // comparado sin valor absoluto contra un límite positivo siempre daba
+    // "sí se puede deshacer", esquivando el tope de seguridad del 20 %.
+    return movimiento.cantidad.abs() <= cantidadActualItem * limiteDeshacerPorcentaje;
   }
 
   /// Inserta un ajuste que revierte exactamente el efecto de

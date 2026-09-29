@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/insumo.dart';
 import '../../services/inventario_service.dart';
-import '../../utils/responsive.dart';
 import '../../widgets/autocompletar_texto.dart';
+import '../../widgets/formulario_widgets.dart';
 
 /// Formulario de alta/edición. El código (IN-xxx / MP-xxx) se genera
 /// automáticamente en el servidor — el usuario nunca lo escribe a mano,
@@ -97,91 +97,89 @@ class _InsumoFormDialogState extends State<InsumoFormDialog> {
   @override
   Widget build(BuildContext context) {
     final esMP = widget.tabla == 'materia_prima';
-    return AlertDialog(
-      title: Text(widget.insumo == null ? 'Nuevo ítem' : 'Editar ítem'),
-      content: SizedBox(
-        width: anchoDialogo(context, 420),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    final etiquetaExtra = widget.tabla == 'tapas'
+        ? 'Color'
+        : widget.tabla == 'preformas'
+            ? 'Tamaño (ej. 2,5 L)'
+            : '';
+
+    return ModalFormulario(
+      titulo: widget.insumo == null ? 'Nuevo ítem' : 'Editar ítem',
+      icono: widget.insumo == null ? Icons.add_box_outlined : Icons.edit_outlined,
+      textoBoton: widget.insumo == null ? 'Registrar' : 'Guardar cambios',
+      guardando: _guardando,
+      onGuardar: _detalleCtrl.text.trim().isEmpty ? null : _guardar,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SeccionFormulario(widget.insumo == null
+              ? 'Datos del nuevo ítem'
+              : 'Código ${widget.insumo!.codigo}'),
+          CampoFormulario(
+            etiqueta: 'Detalle *',
+            child: TextField(
+              controller: _detalleCtrl,
+              onChanged: (_) => setState(() {}),
+              decoration: decoracionFormulario(),
+            ),
+          ),
+          if (!esMP) ...[
+            CampoFormulario(
+              etiqueta: 'Formato (Short/Long Finish...)',
+              child: TextField(
+                  controller: _formatoCtrl, decoration: decoracionFormulario()),
+            ),
+            CampoFormulario(
+              etiqueta: etiquetaExtra,
+              child: TextField(
+                  controller: _colorTamanoCtrl,
+                  decoration: decoracionFormulario()),
+            ),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: _detalleCtrl,
-                decoration: const InputDecoration(labelText: 'Detalle *'),
-              ),
-              if (!esMP)
-                TextField(
-                  controller: _formatoCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'Formato (Short/Long Finish...)'),
-                ),
-              TextField(
-                controller: _colorTamanoCtrl,
-                decoration: InputDecoration(
-                    label: Text(widget.tabla == 'tapas'
-                        ? 'Color'
-                        : widget.tabla == 'preformas'
-                            ? 'Tamaño (ej. 2,5 L)'
-                            : '')),
-              ),
-              Row(children: [
-                Expanded(
+              Expanded(
+                child: CampoFormulario(
+                  etiqueta: 'Unidad',
                   child: TextField(
-                    controller: _unidadCtrl,
-                    decoration: const InputDecoration(labelText: 'Unidad'),
-                  ),
+                      controller: _unidadCtrl, decoration: decoracionFormulario()),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: CampoFormulario(
+                  etiqueta: 'Cantidad real',
                   child: TextField(
                     controller: _cantidadCtrl,
                     keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Cantidad real'),
+                    decoration: decoracionFormulario(),
                   ),
                 ),
-              ]),
-              TextField(
-                controller: _stockMinCtrl,
-                keyboardType: TextInputType.number,
-                decoration:
-                    const InputDecoration(labelText: 'Stock mínimo (alerta)'),
               ),
-              if (esMP)
-                AutocompletarTexto(
-                  label: 'Proveedor habitual',
-                  valorInicial: _proveedor,
-                  opciones: _proveedores,
-                  onChanged: (v) => _proveedor = v,
-                ),
-              if (esMP && !widget.esJarabes)
-                DropdownButtonFormField<String?>(
-                  value: _area,
-                  decoration: const InputDecoration(labelText: 'Área'),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('General (Almacén)')),
-                    DropdownMenuItem(value: 'jarabes', child: Text('Jarabes')),
-                  ],
-                  onChanged: (v) => setState(() => _area = v),
-                ),
             ],
           ),
-        ),
+          CampoFormulario(
+            etiqueta: 'Stock mínimo (alerta)',
+            child: TextField(
+              controller: _stockMinCtrl,
+              keyboardType: TextInputType.number,
+              decoration: decoracionFormulario(),
+            ),
+          ),
+          if (esMP)
+            CampoFormulario(
+              etiqueta: 'Proveedor habitual',
+              child: AutocompletarTexto(
+                label: 'Proveedor habitual',
+                valorInicial: _proveedor,
+                opciones: _proveedores,
+                onChanged: (v) => _proveedor = v,
+                decoracion: decoracionFormulario(),
+              ),
+            ),
+        ],
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: _guardando ? null : _guardar,
-          child: _guardando
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Guardar'),
-        ),
-      ],
     );
   }
 }

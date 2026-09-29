@@ -30,7 +30,8 @@ class ProduccionService {
   }
 
   static const _selectPlan =
-      '*, plan_produccion_detalle(*, formulas(sabor), productos_terminados(nombre, envase, litros_por_botella))';
+      '*, plan_produccion_detalle(*, formulas(sabor), '
+      'productos_terminados(nombre, envase, litros_por_botella, botellas_por_paquete))';
 
   /// Obtiene (o crea si no existe) el plan de producción de hoy.
   /// Requiere conexión: el llamador debe manejar la excepción (p. ej.

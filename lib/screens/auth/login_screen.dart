@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/hive_service.dart';
 import '../../utils/responsive.dart';
+import '../../widgets/gradient_text.dart';
+import '../../widgets/video_background.dart';
 import 'recuperar_password_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,10 +21,50 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _cargando = false;
   String? _error;
 
+  /// Cuenta regresiva de un bloqueo temporal (null = no hay ninguno en curso).
+  int? _segundosEspera;
+  Timer? _timerEspera;
+
   @override
   void initState() {
     super.initState();
     _emailCtrl.text = HiveService.ultimoEmail() ?? '';
+  }
+
+  @override
+  void dispose() {
+    _timerEspera?.cancel();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  void _iniciarCuentaRegresiva(int segundos) {
+    _timerEspera?.cancel();
+    setState(() => _segundosEspera = segundos);
+    _timerEspera = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        final restante = (_segundosEspera ?? 1) - 1;
+        if (restante <= 0) {
+          _segundosEspera = null;
+          t.cancel();
+        } else {
+          _segundosEspera = restante;
+        }
+      });
+    });
+  }
+
+  String _formatoEspera(int segundos) {
+    if (segundos < 60) return '$segundos segundo${segundos == 1 ? '' : 's'}';
+    final min = segundos ~/ 60;
+    final seg = segundos % 60;
+    final texto = '$min minuto${min == 1 ? '' : 's'}';
+    return seg == 0 ? texto : '$texto $seg segundo${seg == 1 ? '' : 's'}';
   }
 
   Future<void> _entrar() async {
@@ -30,53 +73,82 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     final auth = context.read<AuthService>();
-    final error =
+    final resultado =
         await auth.iniciarSesion(_emailCtrl.text.trim(), _passCtrl.text);
-    if (error == null) {
+    if (resultado.ok) {
       await HiveService.guardarUltimoEmail(_emailCtrl.text.trim());
     }
+    if (!mounted) return;
     setState(() {
       _cargando = false;
-      _error = error;
+      _error = resultado.error;
     });
+    if (resultado.segundosEspera != null) {
+      _iniciarCuentaRegresiva(resultado.segundosEspera!);
+    } else {
+      _timerEspera?.cancel();
+      _segundosEspera = null;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.primario, Color(0xFF0D3B24)],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Gradiente de respaldo: se ve mientras el video carga o si la
+          // plataforma no puede reproducirlo.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.primario, Color(0xFF0D3B24)],
+              ),
+            ),
           ),
-        ),
-        child: Center(
-          child: Card(
-            elevation: 12,
-            shadowColor: Colors.black45,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: Container(
-              width: anchoDialogo(context, 380, margen: 64),
-              padding: const EdgeInsets.fromLTRB(32, 40, 32, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/logo.jpg', height: 76),
+          const VideoBackground(asset: 'assets/videos/login_bg.mp4'),
+          _buildContenido(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContenido(BuildContext context) {
+    return
+        // SingleChildScrollView + ConstrainedBox: si el contenido (ej. un
+        // mensaje de error largo) no entra en la altura de la pantalla,
+        // se puede desplazar en vez de desbordar; si entra, se centra
+        // igual que antes.
+        SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(minHeight: MediaQuery.of(context).size.height),
+            child: Center(
+              child: Card(
+                elevation: 12,
+                shadowColor: Colors.black45,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                child: Container(
+                  width: anchoDialogo(context, 380, margen: 64),
+                  padding: const EdgeInsets.fromLTRB(32, 40, 32, 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                  Image.asset('assets/logo.png', height: 76),
                   const SizedBox(height: 18),
-                  const Text('Salvietti Control',
+                  const GradientText('Salvietti Control',
                       style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primario)),
+                          fontSize: 26, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
                   const Text('Sistema de gestión de inventarios',
                       style: TextStyle(color: Colors.black54, fontSize: 13)),
                   const SizedBox(height: 28),
                   TextField(
                     controller: _emailCtrl,
-                    maxLength: 254,
+                    maxLength: Validacion.emailMax,
                     keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
                       labelText: 'Correo',
@@ -122,7 +194,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: const Text('¿Olvidaste tu contraseña?'),
                     ),
                   ),
-                  if (_error != null) ...[
+                  if (_segundosEspera != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Demasiados intentos fallidos. Esperá '
+                      '${_formatoEspera(_segundosEspera!)} e intentá de nuevo.',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ] else if (_error != null) ...[
                     const SizedBox(height: 4),
                     Text(_error!, style: const TextStyle(color: Colors.red)),
                   ],
@@ -130,7 +209,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: _cargando ? null : _entrar,
+                      onPressed:
+                          (_cargando || _segundosEspera != null) ? null : _entrar,
                       style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primario,
                           padding: const EdgeInsets.symmetric(vertical: 14),

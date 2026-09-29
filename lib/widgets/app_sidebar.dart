@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
-import '../screens/perfil/perfil_dialog.dart';
+import '../core/modulos.dart';
 import '../services/auth_service.dart';
-import '../services/sync_service.dart';
 
+/// Menú lateral oscuro: ícono + nombre de cada sección, con la sección
+/// activa resaltada en verde. El logo, la sincronización y el usuario
+/// viven en la barra superior (ver `AppTopBar`).
 class AppSidebar extends StatelessWidget {
   final String rutaActual;
   final void Function(String ruta) onNavegar;
@@ -13,154 +15,108 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthService>();
-    final sync = context.watch<SyncService>();
-    final usuario = auth.usuarioActual!;
+    final usuario = context.watch<AuthService>().usuarioActual!;
 
     final items = <_Item>[
-      _Item('dashboard', 'Dashboard', Icons.dashboard_outlined, true),
-      _Item('inventario', 'Inventario', Icons.inventory_2_outlined,
-          usuario.puedeVerInventario),
-      _Item('produccion', 'Producción', Icons.factory_outlined,
+      _Item('dashboard', 'Inicio', Icons.home_outlined, true),
+      // Arriba de todo: es lo primero que entra a hacer el Jefe de
+      // Producción cada día (armar/revisar el plan), no algo ocasional.
+      _Item('produccion', 'Producción del día', Icons.factory_outlined,
           usuario.puedeVerProduccion),
-      _Item('estadisticas', 'Estadísticas', Icons.bar_chart_outlined,
-          usuario.puedeVerEstadisticas),
-      _Item('reportes', 'Reportes', Icons.picture_as_pdf_outlined,
-          usuario.puedeVerReportes),
+      // Segundo en uso diario después de Producción del día.
+      _Item('jarabes', 'Jarabes', Icons.water_drop_outlined,
+          usuario.puedeVerModulo(Modulo.jarabesProduccion)),
+      // Inventario por almacenes (nuevo): requiere la migración de permisos.
+      _Item('almacenes', 'Almacenes', Icons.warehouse_outlined,
+          usuario.permisos != null && usuario.puedeVerInventario),
+      _Item('recepciones', 'Recepciones', Icons.local_shipping_outlined,
+          usuario.puedeVerModulo(Modulo.recepciones)),
+      _Item('entregas', 'Entregas', Icons.assignment_turned_in_outlined,
+          usuario.puedeVerModulo(Modulo.entregas)),
+      _Item('solicitudes', 'Solicitudes', Icons.mark_email_read_outlined,
+          usuario.puedeVerModulo(Modulo.solicitudes)),
+      _Item('soplado', 'Soplado', Icons.air_outlined,
+          usuario.puedeVerModulo(Modulo.soplado)),
+      _Item('calidad', 'Control de Calidad', Icons.science_outlined,
+          usuario.puedeVerModulo(Modulo.calidad)),
+      _Item('llenadora', 'Llenadora', Icons.local_drink_outlined,
+          usuario.puedeVerModulo(Modulo.llenado)),
+      _Item('codificacion', 'Codificación', Icons.qr_code_2,
+          usuario.puedeVerModulo(Modulo.codificacion)),
+      _Item('salidas', 'Registro de salidas', Icons.outbox_outlined,
+          usuario.puedeVerModulo(Modulo.salidas)),
+      _Item('mermas', 'Mermas', Icons.report_problem_outlined,
+          usuario.puedeVerModulo(Modulo.mermas)),
+      _Item('soda_caustica', 'Soda Cáustica', Icons.science_outlined,
+          usuario.puedeVerModulo(Modulo.sodaCaustica)),
+      _Item('informe_gerente', 'Informe de Producción', Icons.summarize_outlined,
+          usuario.puedeVerModulo(Modulo.informeProduccion)),
       _Item('historial', 'Historial / Bitácora', Icons.history,
-          usuario.esAlmacen || usuario.esGerente),
+          usuario.puedeVerHistorial),
       _Item('usuarios', 'Usuarios', Icons.people_outline,
           usuario.puedeVerUsuarios),
     ];
 
     return Container(
-      width: 260,
-      color: Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      width: 240,
+      color: const Color(0xFF17221D),
+      // Scrollable: en ventanas bajas con muchos ítems de menú visibles,
+      // la lista se desplaza en vez de desbordar.
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            color: AppColors.primario,
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.asset('assets/logo.jpg', width: 34, height: 34),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('Salvietti Control',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                ),
-              ],
+          for (final item in items.where((i) => i.visible))
+            _FilaMenu(
+              item: item,
+              activa: rutaActual == item.ruta,
+              onTap: () => onNavegar(item.ruta),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Icon(sync.online ? Icons.cloud_done : Icons.cloud_off,
-                    size: 16,
-                    color: sync.online ? Colors.green : Colors.orange),
-                const SizedBox(width: 6),
-                Text(sync.online ? 'En línea' : 'Sin conexión',
-                    style: const TextStyle(fontSize: 12)),
-                const Spacer(),
-                if (sync.pendientes > 0)
-                  Chip(
-                    label: Text('${sync.pendientes} pend.'),
-                    backgroundColor: Colors.orange.shade100,
-                    labelStyle: const TextStyle(fontSize: 11),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // Scrollable: en ventanas bajas con muchos ítems de menú visibles,
-          // esta lista se desplaza en vez de desbordar toda la columna.
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                for (final item in items.where((i) => i.visible))
-                  ListTile(
-                    leading: Icon(item.icono,
-                        color: rutaActual == item.ruta
-                            ? AppColors.primario
-                            : Colors.black54),
-                    title: Text(item.titulo,
-                        style: TextStyle(
-                            color: rutaActual == item.ruta
-                                ? AppColors.primario
-                                : Colors.black87,
-                            fontWeight: rutaActual == item.ruta
-                                ? FontWeight.bold
-                                : FontWeight.normal)),
-                    selected: rutaActual == item.ruta,
-                    selectedTileColor: AppColors.primario.withOpacity(0.08),
-                    onTap: () => onNavegar(item.ruta),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // Fila armada a mano (no ListTile) para no depender de su alto
-          // mínimo fijo, que con avatar + 2 líneas de texto + botón podía
-          // desbordar unos pixeles según el tamaño de fuente del sistema.
-          InkWell(
-            onTap: () => showDialog(
-                context: context, builder: (_) => const PerfilDialog()),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundImage: auth.fotoLocalPendiente != null
-                        ? MemoryImage(auth.fotoLocalPendiente!)
-                        : (usuario.avatarUrl != null
-                            ? NetworkImage(usuario.avatarUrl!)
-                            : null) as ImageProvider?,
-                    child: auth.fotoLocalPendiente == null &&
-                            usuario.avatarUrl == null
-                        ? Text(usuario.nombreCompleto.isNotEmpty
-                            ? usuario.nombreCompleto[0].toUpperCase()
-                            : '?')
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(usuario.nombreCompleto,
-                            style: const TextStyle(fontSize: 13),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                        Text(Rol.etiqueta(usuario.rol),
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.black54),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.logout, size: 18),
-                    tooltip: 'Cerrar sesión',
-                    onPressed: () => auth.cerrarSesion(),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilaMenu extends StatelessWidget {
+  final _Item item;
+  final bool activa;
+  final VoidCallback onTap;
+  const _FilaMenu(
+      {required this.item, required this.activa, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: activa ? AppColors.primario : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+                color: activa ? const Color(0xFF7FE0A5) : Colors.transparent,
+                width: 4),
+            bottom: const BorderSide(color: Color(0xFF212E27)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(item.icono,
+                size: 22, color: activa ? Colors.white : Colors.white70),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(item.titulo,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: activa ? Colors.white : Colors.white70,
+                      fontWeight: activa ? FontWeight.bold : FontWeight.normal)),
+            ),
+            Icon(Icons.chevron_right,
+                size: 18, color: activa ? Colors.white : Colors.white24),
+          ],
+        ),
       ),
     );
   }

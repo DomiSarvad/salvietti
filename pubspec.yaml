@@ -34,6 +34,14 @@ dependencies:
   excel: ^4.0.6
   share_plus: ^10.1.3
 
+  # Video de fondo (login)
+  video_player: ^2.9.5
+  fvp: ^0.38.1
+
+  # Mensajes/toasts animados (registro, eliminación, etc.)
+  toastification: ^3.2.0
+  file_picker: ^11.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -45,4 +53,5 @@ flutter:
   uses-material-design: true
   assets:
     - .env
-    - assets/logo.jpg
+    - assets/logo.png
+    - assets/videos/login_bg.mp4

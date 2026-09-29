@@ -104,7 +104,7 @@ class _RecuperarPasswordDialogState extends State<RecuperarPasswordDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _emailCtrl,
-                maxLength: 254,
+                maxLength: Validacion.emailMax,
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(labelText: 'Correo'),
               ),

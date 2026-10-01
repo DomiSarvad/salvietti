@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../models/recepciones_modelos.dart';
 import '../repositories/recepciones_repository.dart';
@@ -30,8 +31,44 @@ const _meses = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoAlmacenChips = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Almacenes',
+    texto: 'Con qué almacén trabajar, según a cuáles tenga acceso tu rol.',
+  );
+  final _pasoVista = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Recepciones / Reclamos del mes',
+    texto: '"Recepciones" es lo que llegó, factura contra peso real. "Reclamos del '
+        'mes" junta lo que faltó, por proveedor e ítem, para el mes que elijas.',
+  );
+  final _pasoBuscador = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Buscador y filtro',
+    texto: 'Buscá por ítem, proveedor, factura o lote. "Con diferencia" filtra solo '
+        'las recepciones donde lo real no coincidió con la factura.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context,
+            idTour: 'recepciones', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoAlmacenChips, _pasoVista, _pasoBuscador];
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +99,13 @@ class _Vista extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _Cabecera(svc: svc),
+        _Cabecera(
+          svc: svc,
+          pasoAlmacenChips: _pasoAlmacenChips,
+          pasoVista: _pasoVista,
+          pasoBuscador: _pasoBuscador,
+          pasosAyuda: _pasosAyuda,
+        ),
         Expanded(
           child: svc.vista == VistaRecepciones.lista
               ? _Lista(svc: svc)
@@ -75,7 +118,17 @@ class _Vista extends StatelessWidget {
 
 class _Cabecera extends StatelessWidget {
   final RecepcionesService svc;
-  const _Cabecera({required this.svc});
+  final PasoAyuda pasoAlmacenChips;
+  final PasoAyuda pasoVista;
+  final PasoAyuda pasoBuscador;
+  final List<PasoAyuda> Function() pasosAyuda;
+  const _Cabecera({
+    required this.svc,
+    required this.pasoAlmacenChips,
+    required this.pasoVista,
+    required this.pasoBuscador,
+    required this.pasosAyuda,
+  });
 
   Future<void> _nueva(BuildContext context) => showDialog<bool>(
         context: context,
@@ -95,34 +148,42 @@ class _Cabecera extends StatelessWidget {
                 child: Text('Recepciones',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
               ),
-              if (svc.puedeRecibirEn(svc.almacenId ?? '') ||
-                  svc.almacenes.any((a) => svc.puedeRecibirEn(a.id)))
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                  onPressed: () => _nueva(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Nueva recepción'),
-                ),
+              BotonAyuda(idTour: 'recepciones', pasos: pasosAyuda),
             ],
           ),
+          if (svc.puedeRecibirEn(svc.almacenId ?? '') ||
+              svc.almacenes.any((a) => svc.puedeRecibirEn(a.id))) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                onPressed: () => _nueva(context),
+                icon: const Icon(Icons.add),
+                label: const Text('Nueva recepción'),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final a in svc.almacenes)
-                ChoiceChip(
-                  label: Text(a.nombre),
-                  selected: a.id == svc.almacenId,
-                  selectedColor: AppColors.primario,
-                  labelStyle: TextStyle(
-                      color: a.id == svc.almacenId ? Colors.white : Colors.black87),
-                  onSelected: (_) => svc.seleccionarAlmacen(a.id),
-                ),
-            ],
+          pasoAlmacenChips.envolver(
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final a in svc.almacenes)
+                  ChoiceChip(
+                    label: Text(a.nombre),
+                    selected: a.id == svc.almacenId,
+                    selectedColor: AppColors.primario,
+                    labelStyle: TextStyle(
+                        color: a.id == svc.almacenId ? Colors.white : Colors.black87),
+                    onSelected: (_) => svc.seleccionarAlmacen(a.id),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
-          SegmentedButton<VistaRecepciones>(
+          pasoVista.envolver(SegmentedButton<VistaRecepciones>(
             segments: const [
               ButtonSegment(
                   value: VistaRecepciones.lista,
@@ -135,10 +196,10 @@ class _Cabecera extends StatelessWidget {
             ],
             selected: {svc.vista},
             onSelectionChanged: (s) => svc.cambiarVista(s.first),
-          ),
+          )),
           if (svc.vista == VistaRecepciones.lista) ...[
             const SizedBox(height: 10),
-            Row(
+            pasoBuscador.envolver(Row(
               children: [
                 Expanded(
                   child: TextField(
@@ -162,7 +223,7 @@ class _Cabecera extends StatelessWidget {
                   onSelected: (_) => svc.alternarSoloConDiferencia(),
                 ),
               ],
-            ),
+            )),
           ],
         ],
       ),

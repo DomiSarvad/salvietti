@@ -170,6 +170,14 @@ void main() {
           contains('negativa'));
     });
 
+    test('no deja que la merma supere lo codificado', () async {
+      final s = await _svc('codificacion');
+      expect(
+          await s.finalizarCorrida(_corrida(),
+              const FinalizarCorridaCodificacion(botellasCodificadas: 10, botellasMalTapadas: 999)),
+          contains('no puede ser mayor a lo codificado'));
+    });
+
     test('exige motivo cuando hay cualquier merma', () async {
       final s = await _svc('codificacion');
       expect(

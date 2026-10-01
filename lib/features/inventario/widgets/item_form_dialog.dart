@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/notificaciones.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/item_inventario.dart';
@@ -23,6 +24,34 @@ class ItemFormDialog extends StatefulWidget {
 }
 
 class _ItemFormDialogState extends State<ItemFormDialog> {
+  final _pasoCategoria = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Categoría',
+    texto: 'Elegí dónde vive este ítem dentro del almacén. Solo se puede crear en una '
+        'categoría propia sin subdivisiones — si la categoría tiene divisiones, primero '
+        'entrá a la que corresponda.',
+  );
+  final _pasoUnidad = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Unidad de medida',
+    texto: 'La unidad en la que se cuenta el stock (kg, unidades, litros…).',
+  );
+  final _pasoCompra = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Se compra en / por envase',
+    texto: 'Cómo llega de fábrica (quintal, bidón, bolsa) y cuántas unidades trae cada '
+        'envase — con esto el sistema convierte automáticamente al recibir un pedido.',
+  );
+  final _pasoCaracteristicas = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Características (opcional)',
+    texto: 'Color, formato, peso, ancho o micronaje: solo para ítems donde esto '
+        'distingue una variante de otra (ej. tapas, preformas).',
+  );
+
+  List<PasoAyuda> _pasosAyuda() =>
+      [_pasoCategoria, _pasoUnidad, _pasoCompra, _pasoCaracteristicas];
+
   late final TextEditingController _detalle;
   late final TextEditingController _unidadCompra;
   late final TextEditingController _factor;
@@ -188,19 +217,23 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
       textoBoton: _esEdicion ? 'Guardar cambios' : 'Crear ítem',
       guardando: _guardando,
       onGuardar: _guardar,
+      idTour: 'item_form',
+      pasosAyuda: _pasosAyuda,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DropdownButtonFormField<int>(
-            initialValue: hojas.any((h) => h.key == _categoriaId) ? _categoriaId : null,
-            isExpanded: true,
-            decoration: _deco('Categoría'),
-            items: [
-              for (final h in hojas)
-                DropdownMenuItem(
-                    value: h.key, child: Text(h.value, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: (v) => setState(() => _categoriaId = v),
+          _pasoCategoria.envolver(
+            DropdownButtonFormField<int>(
+              initialValue: hojas.any((h) => h.key == _categoriaId) ? _categoriaId : null,
+              isExpanded: true,
+              decoration: _deco('Categoría'),
+              items: [
+                for (final h in hojas)
+                  DropdownMenuItem(
+                      value: h.key, child: Text(h.value, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (v) => setState(() => _categoriaId = v),
+            ),
           ),
           sep,
           _campo(_detalle, 'Detalle', max: 120),
@@ -211,65 +244,48 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
                   style: const TextStyle(fontSize: 12, color: Colors.black54)),
             ),
           sep,
-          DropdownButtonFormField<String>(
-            initialValue: _unidad,
-            decoration: _deco('Unidad de medida'),
-            items: [
-              for (final u in UnidadMedida.todas)
-                DropdownMenuItem(value: u, child: Text(UnidadMedida.etiqueta(u))),
-            ],
-            onChanged: (v) => setState(() => _unidad = v ?? _unidad),
+          _pasoUnidad.envolver(
+            DropdownButtonFormField<String>(
+              initialValue: _unidad,
+              decoration: _deco('Unidad de medida'),
+              items: [
+                for (final u in UnidadMedida.todas)
+                  DropdownMenuItem(value: u, child: Text(UnidadMedida.etiqueta(u))),
+              ],
+              onChanged: (v) => setState(() => _unidad = v ?? _unidad),
+            ),
           ),
           sep,
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  child: _campo(_unidadCompra, 'Se compra en',
-                      ayuda: 'quintal, bidón, bolsa…', max: 30)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _campo(_factor, '$_unidad por envase',
-                      ayuda: 'ej. 46', numerico: true)),
-            ],
+          _pasoCompra.envolver(
+            FilaCampos([
+              _campo(_unidadCompra, 'Se compra en', ayuda: 'quintal, bidón, bolsa…', max: 30),
+              _campo(_factor, '$_unidad por envase', ayuda: 'ej. 46', numerico: true),
+            ]),
           ),
           sep,
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campo(_porCaja, 'Unidades por caja', numerico: true)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _campo(_minimo, 'Stock mínimo',
-                      ayuda: 'Marca "Pedido"', numerico: true)),
-            ],
-          ),
+          FilaCampos([
+            _campo(_porCaja, 'Unidades por caja', numerico: true),
+            _campo(_minimo, 'Stock mínimo', ayuda: 'Marca "Pedido"', numerico: true),
+          ]),
           sep,
           _campo(_consumo, 'Consumo diario manual',
               ayuda: 'Solo si todavía no hay salidas registradas', numerico: true),
           const SizedBox(height: 16),
-          const Text('Características (opcional)',
-              style: TextStyle(fontWeight: FontWeight.w700)),
+          _pasoCaracteristicas.envolver(
+            const Text('Características (opcional)',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campo(_color, 'Color', max: 40)),
-              const SizedBox(width: 10),
-              Expanded(child: _campo(_formato, 'Formato', ayuda: 'Short, Long…', max: 40)),
-            ],
-          ),
+          FilaCampos([
+            _campo(_color, 'Color', max: 40),
+            _campo(_formato, 'Formato', ayuda: 'Short, Long…', max: 40),
+          ]),
           sep,
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campo(_peso, 'Peso (g)', numerico: true)),
-              const SizedBox(width: 10),
-              Expanded(child: _campo(_ancho, 'Ancho (mm)', numerico: true)),
-              const SizedBox(width: 10),
-              Expanded(child: _campo(_micronaje, 'Micronaje', numerico: true)),
-            ],
-          ),
+          FilaCampos([
+            _campo(_peso, 'Peso (g)', numerico: true),
+            _campo(_ancho, 'Ancho (mm)', numerico: true),
+            _campo(_micronaje, 'Micronaje', numerico: true),
+          ]),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),

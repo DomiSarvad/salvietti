@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../models/calidad_modelos.dart';
 import '../repositories/calidad_repository.dart';
@@ -24,8 +25,37 @@ class CalidadScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoPendientes = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Pendientes de analizar',
+    texto: 'Los preparados que Jarabes ya finalizó y todavía no tienen análisis de '
+        'Calidad (Brix, pH, aspecto).',
+  );
+  final _pasoHistorial = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Historial',
+    texto: 'Los análisis ya hechos, marcados como conforme o no conforme.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'calidad', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoPendientes, _pasoHistorial];
 
   @override
   Widget build(BuildContext context) {
@@ -50,14 +80,41 @@ class _Vista extends StatelessWidget {
       );
     }
 
+    // El historial de análisis puede crecer mucho: queda como lista
+    // perezosa aparte, después del encabezado (que se construye entero de
+    // entrada para que el tour siempre encuentre sus pasos).
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        const Text('Control de Calidad',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+        _encabezado(svc),
+        if (svc.analisis.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('Todavía no hay análisis registrados.',
+                style: TextStyle(color: Colors.black54)),
+          )
+        else
+          for (final a in svc.analisis) _TarjetaAnalisis(svc: svc, a: a),
+      ],
+    );
+  }
+
+  Widget _encabezado(CalidadService svc) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: [
+          const Expanded(
+            child: Text('Control de Calidad',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          ),
+          BotonAyuda(idTour: 'calidad', pasos: _pasosAyuda),
+        ]),
         const SizedBox(height: 16),
-        Text('Pendientes de analizar (${svc.pendientes.length})',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        _pasoPendientes.envolver(
+          Text('Pendientes de analizar (${svc.pendientes.length})',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ),
         const SizedBox(height: 8),
         if (svc.pendientes.isEmpty)
           const Padding(
@@ -68,16 +125,11 @@ class _Vista extends StatelessWidget {
         else
           for (final p in svc.pendientes) _TarjetaPendiente(svc: svc, p: p),
         const SizedBox(height: 20),
-        const Text('Historial', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        _pasoHistorial.envolver(
+          const Text('Historial',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ),
         const SizedBox(height: 8),
-        if (svc.analisis.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Todavía no hay análisis registrados.',
-                style: TextStyle(color: Colors.black54)),
-          )
-        else
-          for (final a in svc.analisis) _TarjetaAnalisis(svc: svc, a: a),
       ],
     );
   }

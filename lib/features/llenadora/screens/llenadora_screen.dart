@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/llenadora_modelos.dart';
@@ -25,8 +26,42 @@ class LlenadoraScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoIniciar = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Iniciar corrida',
+    texto: 'Elegís sabor, presentación y el preparado de Jarabes que se va a llenar.',
+  );
+  final _pasoAvance = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Avance de los últimos 14 días',
+    texto: 'Cuánto se llenó de cada sabor/presentación en las últimas dos semanas.',
+  );
+  final _pasoHistorial = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Historial',
+    texto: 'No vuelve a descontar tapas del almacén — eso ya lo hizo Almacén al '
+        'entregar el pedido. Acá solo queda el registro de cuánto se llenó y la merma.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'llenadora', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoIniciar, _pasoAvance, _pasoHistorial];
 
   Future<void> _iniciar(BuildContext context, LlenadoraService svc) => showDialog<bool>(
         context: context,
@@ -59,31 +94,7 @@ class _Vista extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Llenadora', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-            ),
-            if (svc.puedeCrear)
-              FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                onPressed: () => _iniciar(context, svc),
-                icon: const Icon(Icons.add),
-                label: const Text('Iniciar corrida'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _SeccionAvance(svc: svc),
-        const SizedBox(height: 20),
-        if (svc.enCurso.isNotEmpty) ...[
-          const Text('En curso', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 8),
-          for (final c in svc.enCurso) _TarjetaCorrida(svc: svc, c: c),
-          const SizedBox(height: 20),
-        ],
-        const Text('Historial', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-        const SizedBox(height: 8),
+        _encabezado(context, svc),
         if (svc.historial.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
@@ -92,6 +103,51 @@ class _Vista extends StatelessWidget {
           )
         else
           for (final c in svc.historial) _TarjetaCorrida(svc: svc, c: c),
+      ],
+    );
+  }
+
+  Widget _encabezado(BuildContext context, LlenadoraService svc) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child:
+                  Text('Llenadora', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BotonAyuda(idTour: 'llenadora', pasos: _pasosAyuda),
+          ],
+        ),
+        if (svc.puedeCrear) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _pasoIniciar.envolver(
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                onPressed: () => _iniciar(context, svc),
+                icon: const Icon(Icons.add),
+                label: const Text('Iniciar corrida'),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        _pasoAvance.envolver(_SeccionAvance(svc: svc)),
+        const SizedBox(height: 20),
+        if (svc.enCurso.isNotEmpty) ...[
+          const Text('En curso', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 8),
+          for (final c in svc.enCurso) _TarjetaCorrida(svc: svc, c: c),
+          const SizedBox(height: 20),
+        ],
+        _pasoHistorial.envolver(
+          const Text('Historial',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }

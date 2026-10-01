@@ -123,6 +123,10 @@ begin
         raise exception 'El ítem no existe o está eliminado.';
     end if;
 
+    -- Bloquea el ítem: dos entregas simultáneas del mismo producto peligroso
+    -- no deben poder leer el mismo saldo y descontar ambas por separado.
+    perform 1 from public.inv_items where id = p_item_id for update;
+
     select coalesce(sum(cantidad), 0) into v_total
       from public.inv_movimientos where item_id = p_item_id and almacen_id = 'soda_caustica';
     if p_cantidad > v_total + 1e-9 then

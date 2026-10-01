@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../models/informe_modelos.dart';
 import '../repositories/informe_repository.dart';
@@ -24,8 +25,33 @@ class InformeScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoInfo = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Esperado vs. producido',
+    texto: 'Compara lo esperado según el estándar de cada sabor contra lo producido. '
+        'Tocá una fila para ver la merma por área ese día. Es de solo lectura: nada se '
+        'carga desde acá.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'informe_produccion', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoInfo];
 
   @override
   Widget build(BuildContext context) {
@@ -50,16 +76,28 @@ class _Vista extends StatelessWidget {
       );
     }
 
+    // El resumen puede crecer mucho: queda como lista perezosa aparte,
+    // después del encabezado (que se construye entero de entrada para que
+    // el tour siempre encuentre sus pasos).
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        const Text('Informe general de Producción',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Informe general de Producción',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BotonAyuda(idTour: 'informe_produccion', pasos: _pasosAyuda),
+          ],
+        ),
         const SizedBox(height: 4),
-        const Text(
-            'Compara lo esperado según el estándar de cada sabor contra lo producido. '
-            'Tocá una fila para ver la merma por área ese día.',
-            style: TextStyle(fontSize: 12, color: Colors.black54)),
+        _pasoInfo.envolver(
+          const Text(
+              'Compara lo esperado según el estándar de cada sabor contra lo producido. '
+              'Tocá una fila para ver la merma por área ese día.',
+              style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ),
         const SizedBox(height: 16),
         if (svc.resumen.isEmpty)
           const Padding(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/solicitud.dart';
@@ -28,8 +29,33 @@ class SolicitudesScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoBandejas = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Bandejas',
+    texto: 'Cualquier área le pide algo a Gerencia acá (no a Almacén — para eso está '
+        'Entregas). Gerencia tiene una sola bandeja para aprobar o rechazar todo.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context,
+            idTour: 'solicitudes', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoBandejas];
 
   Future<void> _nueva(BuildContext context, SolicitudesService svc) => showDialog<bool>(
         context: context,
@@ -65,40 +91,53 @@ class _Vista extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Expanded(
-                child: Text('Solicitudes',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Solicitudes',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  ),
+                  BotonAyuda(idTour: 'solicitudes', pasos: _pasosAyuda),
+                ],
               ),
-              if (svc.puedeCrear)
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                  onPressed: () => _nueva(context, svc),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Nueva solicitud'),
+              if (svc.puedeCrear) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                    onPressed: () => _nueva(context, svc),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Nueva solicitud'),
+                  ),
                 ),
+              ],
             ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              for (final b in BandejaSolicitudes.values)
-                if (b != BandejaSolicitudes.porAprobar || svc.puedeAprobar)
-                  ChoiceChip(
-                    label: Text(b == BandejaSolicitudes.porAprobar && svc.pendientesDeAprobar > 0
-                        ? '${b.etiqueta} (${svc.pendientesDeAprobar})'
-                        : b.etiqueta),
-                    selected: svc.bandeja == b,
-                    selectedColor: AppColors.primario,
-                    labelStyle:
-                        TextStyle(color: svc.bandeja == b ? Colors.white : Colors.black87),
-                    onSelected: (_) => svc.elegirBandeja(b),
-                  ),
-            ],
+          child: _pasoBandejas.envolver(
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final b in BandejaSolicitudes.values)
+                  if (b != BandejaSolicitudes.porAprobar || svc.puedeAprobar)
+                    ChoiceChip(
+                      label: Text(b == BandejaSolicitudes.porAprobar && svc.pendientesDeAprobar > 0
+                          ? '${b.etiqueta} (${svc.pendientesDeAprobar})'
+                          : b.etiqueta),
+                      selected: svc.bandeja == b,
+                      selectedColor: AppColors.primario,
+                      labelStyle:
+                          TextStyle(color: svc.bandeja == b ? Colors.white : Colors.black87),
+                      onSelected: (_) => svc.elegirBandeja(b),
+                    ),
+              ],
+            ),
           ),
         ),
         Expanded(

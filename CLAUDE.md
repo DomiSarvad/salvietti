@@ -174,6 +174,17 @@ subdivisiones, la tabla de abajo ya muestra TODOS los ítems de esa categoría y
 ella (no hace falta bajar hasta la hoja del árbol) — se agregó un texto aclarando esto, porque no
 era obvio y llevaba a creer que había que seguir entrando a cada subcategoría para ver algo.
 
+Al lado del buscador de Almacenes hay un botón "Imprimir reporte" (ícono de PDF,
+`_Cabecera._imprimir`) que genera un PDF apaisado con EXACTAMENTE lo que se está viendo en la tabla
+en ese momento — el buscador (y la categoría, y el filtro "Pedido") funcionan como el filtro del
+reporte, no hace falta armar uno aparte. `InventarioPdfService.reporte()`
+(`features/inventario/services/`) arma la tabla (código, detalle, ubicación, stock, mínimo, días,
+estado) con el mismo estilo que `ReporteService` (legacy, para movimientos: logo de marca de agua,
+encabezado con los filtros aplicados, pie con paginado) y se guarda con `ArchivoService.guardar`
+(descarga en web, panel de compartir en celular, carpeta Descargas y se abre solo en escritorio).
+Deshabilitado (sin ocultarse) cuando no hay una tabla que mostrar (`InventarioService.mostrarTabla`
+en falso, ej. parado en la raíz sin buscar nada) — abajo explica por qué con el tooltip.
+
 `features/jarabes/` muestra el plan del día de Producción (`ProduccionService.planDeHoy`, el
 subsistema legacy de `lib/screens/produccion/`) como una tarjeta de solo lectura arriba de todo
 (`_SeccionPlanDelDia`), y en "Nuevo preparado" (`IniciarPreparadoDialog`) ordena el desplegable de
@@ -243,6 +254,129 @@ cargaba una sola vez al entrar a la pantalla, finalizar un preparado ahora dispa
 `_TarjetaPreparado.onFinalizado` → `_VistaState._cargarPlan()` para refrescarlo al toque; si no,
 el tilde/aviso solo aparecía recién al salir y volver a entrar a Jarabes.
 
+Corregir botellas/merma de un producto ya `completado` (chip tocable de arriba) NO vuelve a ajustar
+el stock: el trigger solo descuenta la primera vez. El diálogo lo avisa en el texto, pero si algún
+día se necesita reconciliar stock real contra estimado, hace falta un ajuste manual aparte (no está
+automatizado a propósito, para no tocar lógica de descuento de stock sin que Almacén lo revise).
+
+## Bugs encontrados y corregidos (revisión de código, 2026-09-29)
+
+Barrido de 15 agentes en paralelo sobre todo lo tocado esta sesión (tracked + `lib/features/` +
+SQL nuevo). Lo que se corrigió:
+
+- **`lib/services/movimiento_service.dart`** (`puedeDeshacerse`): comparaba `cantidad` (con signo)
+  contra el límite del 20 % sin `.abs()` — un ajuste NEGATIVO grande (ej. -1000 con 5 de stock)
+  siempre pasaba como "chico" y habilitaba deshacerlo con un clic, saltándose el tope de seguridad.
+  Nota: esta pantalla (Inventario legacy) está huérfana de navegación hoy (`home_shell.dart` ya no
+  la rutea), pero el bug queda corregido igual por si se reconecta.
+- **`lib/services/auth_service.dart`**: (1) `confirmarRecuperacion` no cerraba la sesión temporal de
+  recuperación si `verifyOTP` funcionaba pero `updateUser` fallaba después — quedaba una sesión
+  autenticada viva sin haber cambiado la contraseña. Ahora se hace `signOut()` también en el catch.
+  (2) El filtro de "no es un fallo de login, es un problema de red" no reconocía `TimeoutException`
+  — alguien con wifi sin salida real podía autoescalarse a un bloqueo por intentos fallidos sin
+  haber escrito mal la contraseña ni una vez.
+- **`lib/features/dashboard/`**: (1) "Ítems con menor stock" calculaba `cantidad / 0` cuando los 6
+  ítems más bajos estaban todos en cero — `NaN.clamp(0,1)` da `1.0` en Dart, así que las barras se
+  veían LLENAS justo cuando el stock estaba peor. (2) El semáforo de una tarjeta de almacén
+  (`ResumenAlmacen.estado`) no contaba los ítems "sin datos" (sin consumo cargado) como nada,
+  así que un almacén cuyo peor ítem estuviera en 0 pero sin historial de consumo se pintaba VERDE.
+  Ahora `situacionDe` marca crítico cualquier ítem con `cantidadSistema <= 0`, tenga o no días de
+  existencia calculados. (3) Una vez que `error` quedaba seteado (falla de carga inicial), una
+  actualización en tiempo real que sí traía datos frescos nunca lo limpiaba — la pantalla se quedaba
+  trabada en "No se pudo cargar" con datos ya recuperados atrás. Ahora las recargas silenciosas
+  limpian `error`.
+- **`lib/features/llenadora/` y `lib/features/codificacion/`**: `finalizarCorrida` no comparaba
+  desechos contra lo producido (a diferencia de Soplado, que sí lo hace) — se podía cargar
+  `botellasDesechadas: 500` con `botellasLlenadas: 100` y quedaba guardado, ensuciando
+  `llenadora_avance`/`codificacion_avance` con números negativos. Agregada la validación en el
+  service Y en el RPC del servidor (`llenadora_finalizar_corrida`/`codificacion_finalizar_corrida`,
+  `create or replace function` — no hace falta un patch nuevo, ya estaba publicada la v32/v33).
+- **`supabase/schema_v34_registro_salidas.sql`** (vista `salidas_reporte_detalle`): para Vidrio, el
+  total de botellas se calculaba SOLO cuando `vid_filas = 0`; cualquier fila con filas cargadas
+  (dato normal, no un caso raro) anulaba TODO el total en vez de usar lo que sí se sabe (cajas y
+  botellas libres) — subestimando producción en `salidas_planilla` e `informe_produccion_resumen`.
+- **`supabase/schema_v40_salida_directa.sql`**: (1) cuando una salida directa tomaba de más de un
+  lote (o sin-lote + lote), solo el ÚLTIMO movimiento insertado quedaba con `referencia_id` —
+  cualquier reporte que trace stock por ese id perdía las filas anteriores. Se solucionó insertando
+  `inv_salidas_directas` ANTES de mover stock, para poder enlazar cada `insert` a `inv_movimientos`
+  directamente. (2) Le faltaba el "catch-all" que sí tiene `inv_registrar_movimiento` (v30) para
+  cuando el stock "sin lote" quedó negativo: sin él, la función podía devolver éxito habiendo
+  descontado menos de lo que `inv_salidas_directas.peso_real` dice que se sacó.
+- **`lib/features/recepciones/`**: `crearProveedor` usaba `null` para dos cosas distintas — "nombre
+  inválido" Y "error de red/permiso" — así que el diálogo mostraba siempre el mismo mensaje ("2 a 80
+  caracteres") aunque el problema real fuera de conexión. Ahora el service deja subir la excepción y
+  el diálogo la distingue con su propio mensaje.
+- **`lib/screens/produccion/produccion_planner_screen.dart`**: al reabrir un producto ya completado
+  para corregirlo (función agregada esta sesión), si `botellasProducidas` era `null` el campo se
+  precargaba con el string `"-"` (lo que devuelve `fmtNum(null)` para mostrar en pantalla) — un
+  guardado sin tocar ese campo pisaba la producción real con 0. Ahora, sin dato, el campo queda
+  vacío en vez de con ese guion.
+- **`lib/screens/inventario/inventario_list_screen.dart`** y **`lib/widgets/selector_rol.dart`**:
+  cada uno reimplementaba su propio `_sinTildes` local, más pobre que el `sinTildes()` compartido de
+  `lib/utils/texto.dart` (a `inventario_list_screen.dart` le faltaba `ü→u`/`ñ→n`; a
+  `selector_rol.dart` solo `ü→u`) — ambos reemplazados por el helper compartido.
+- **Concurrencia real (encontrado al preguntar "¿aguanta muchos usuarios a la vez?")**:
+  `inv_registrar_movimiento`/`inv_revertir_movimiento` (v30), `soda_registrar_entrega` (v36) e
+  `inv_registrar_salida_directa` (v40) chequeaban stock disponible con un `select sum(...)` sin
+  bloquear el ítem antes de insertar — dos personas descontando el mismo ítem/almacén a la vez
+  podían ambas pasar el chequeo y dejar el saldo negativo entre las dos. Las cuatro ahora hacen
+  `perform 1 from public.inv_items where id = ... for update;` antes de leer el total, así la
+  segunda transacción espera a que la primera termine en vez de leer el mismo saldo stale. No
+  cambia ninguna firma ni columna, son `create or replace function` sobre archivos ya publicados —
+  no hace falta parche aparte, correr de nuevo v30/v36/v40 alcanza.
+- **La misma concurrencia, encontrada después en una revisión de código aparte (quedaba la excusa
+  de que "ya bloqueaban el pedido/línea padre", y esa excusa era el bug)**: `inv_entregar_pedido`
+  (v21) bloquea la fila de `inv_pedidos` con `for update`, pero eso protege que dos personas entreguen
+  el MISMO pedido a la vez — no evita que dos pedidos DISTINTOS (o una entrega y una salida directa,
+  o una entrega y la finalización de una corrida de Soplado que consume preforma) descuenten el
+  MISMO ítem+almacén al mismo tiempo. Mismo problema en `soplado_finalizar_corrida` (v28): bloquea
+  la corrida, no el ítem de preforma que descuenta. Las dos ahora bloquean también
+  `inv_items`/`id = (el ítem que van a descontar)` antes de leer el saldo, igual que las cuatro de
+  arriba — la lección repetida es que el `for update` tiene que ir sobre la fila del RECURSO que se
+  descuenta (el ítem), no sobre la fila de lo que pidió la operación (pedido, corrida): cualquier
+  función nueva que reste de `inv_items`/`inv_movimientos` necesita este lock, sin importar qué otra
+  cosa ya bloquee.
+
+**Encontrado pero NO corregido** (queda para decidir con más cuidado, no son de solución obvia):
+- La constancia en PDF de Soda Cáustica, documentada como "obligatoria" (v36), no está impuesta en
+  ningún lado: se puede registrar una entrega y cerrar el diálogo sin nunca generar el PDF (el botón
+  vive aparte, en el historial, opcional). Corregirlo implica decidir el flujo (¿bloquear el cierre
+  del diálogo hasta confirmar que se descargó?, ¿generarlo solo automáticamente?) — decisión de
+  producto, no un bug de una línea.
+- Si `PermisosService.delRol` falla (red, o falta el grant de v29), `Usuario.permisos` queda `null`
+  y varias reglas viejas (`puedeVerInventario`, entre otras) caen a un fallback más permisivo que el
+  nuevo modelo por módulo — mientras que el ítem "Almacenes" del menú, más nuevo, exige
+  `permisos != null` y se oculta directamente. Son dos respuestas distintas a la misma falla
+  (mostrar de más vs. esconder de más); cuál es la correcta depende de qué tan seguido falla
+  `delRol` en la práctica, no se tocó sin ese dato.
+- Los permisos (`Usuario.permisos`) se cargan una sola vez al iniciar sesión y no se refrescan: si
+  el Gerente le saca un permiso a un rol mientras alguien de ese rol ya tiene la sesión abierta, esa
+  persona sigue viendo botones/menús que ya no debería hasta que cierre sesión y vuelva a entrar
+  (los datos reales siguen protegidos por RLS del lado del servidor).
+
+**Encontrado en una revisión de código aparte (2026-09-30), NO corregido** (no son bugs — observaciones
+de diseño, quedan para decidir si vale la pena el costo del cambio):
+- No hay un widget compartido para "título + botón de ayuda + acciones" — el arreglo del título
+  partido letra por letra se aplicó a mano en las 10 pantallas que lo tenían. Si una pantalla nueva
+  agrega dos botones condicionales al lado del título sin copiar el patrón `Row(título+"?") +
+  Wrap(botones)`, vuelve a aparecer el mismo bug. Un widget `EncabezadoPantalla(titulo, idTour,
+  pasos, acciones: [...])` que arme eso solo lo haría estructuralmente difícil de romper, en vez de
+  depender de que quien agregue la pantalla se acuerde de esta sección del md.
+- `InventarioPdfService` (nuevo) repite casi entero el "chrome" del PDF de `ReporteService` (logo de
+  marca de agua, pie paginado, estilos de tabla) en vez de compartirlo — un cambio de marca (color,
+  logo, formato de pie) hay que hacerlo en los dos archivos a mano.
+- `lib/screens/inventario/inventario_list_screen.dart` (legacy, sin ruta en el menú) todavía tiene el
+  bug de "sin consumo cargado = verde" que se corrigió en `dashboard_service.situacionDe` — el fix se
+  hizo en el call site nuevo, no en la función compartida (`SemaforoStock.evaluar`/
+  `StockStatusBadge`). Si esta pantalla se vuelve a rutear, o si ese widget se reusa en otro lado, el
+  bug reaparece. Lo correcto sería que `SemaforoStock.evaluar` mismo tratara "sin datos" como no
+  óptimo, en vez de exigirle a cada pantalla que lo filtre antes de llamarlo.
+- `PermisosGestionService.alternar` llama `notifyListeners()` dos veces por toque exitoso (una vez
+  optimista, otra al confirmar el servidor), y `PermisosScreen` mira el service entero con
+  `context.watch` sin `Selector` — cada toque de una casilla reconstruye las ~115 celdas de la
+  matriz dos veces. No rompe nada (son widgets chicos), pero si la matriz crece bastante más convendría
+  acotar el rebuild por fila/celda.
+
 `v18b` es un parche que se corre justo
 después de v18 en bases creadas con una versión vieja de v18 (agrega columnas y recrea
 `inv_existencia`); las vistas cuyas columnas cambian se recrean con `drop view` + `create view`,
@@ -261,7 +395,186 @@ así el movimiento de stock entre almacenes y la elección de lotes quedan en un
 Módulos ya construidos con esta arquitectura: `features/inventario/`, `features/recepciones/`,
 `features/entregas/`, `features/solicitudes/`, `features/soplado/`, `features/jarabes/`,
 `features/calidad/`, `features/llenadora/`, `features/codificacion/`, `features/registro_salidas/`,
-`features/mermas/`, `features/soda_caustica/`, `features/informe_gerente/`, `features/dashboard/`.
+`features/mermas/`, `features/soda_caustica/`, `features/informe_gerente/`, `features/dashboard/`,
+`features/permisos/`.
+
+## Configuración (el engranaje de la barra superior)
+
+El botón de "Configuración" (`AppTopBar`) abría el mismo diálogo que "Mi perfil" — duplicado sin
+sentido. Primer intento: hacer que abriera "Permisos por rol" — pero eso tampoco era lo que hacía
+falta ahí: el gerente pidió que el engranaje sea la configuración general de la app (como en
+cualquier app), y que Permisos se abra desde Usuarios, no desde el menú principal.
+
+Quedó así:
+- **El engranaje** (`onNavegar('configuracion')`) abre `lib/screens/configuracion/` —
+  **Sincronización** (estado online/pendientes + botón "Sincronizar ahora", que hasta ahora existía
+  en `SyncService.sincronizarTodo()` pero no estaba conectado a ningún botón en toda la app) y
+  **Tamaño de letra** (chico/normal/grande, `PreferenciasService`, guardado en Hive
+  `HiveBoxes.preferencias` y aplicado a toda la app envolviendo `MaterialApp.builder` con un
+  `MediaQuery`/`TextScaler` propio en `main.dart` — no hace falta tocar cada pantalla). Es
+  configuración del dispositivo, no de la cuenta (eso sigue siendo "Mi perfil").
+- **Permisos por rol** (`features/permisos/`) ya no tiene ítem en el menú ni en la barra superior:
+  se abre desde **Usuarios**, al editar o dar de alta a alguien — junto al campo "Rol" hay un botón
+  "Ver permisos" que abre `PermisosScreen(rolInicial: rol)` en una pantalla nueva (push normal,
+  no diálogo), ya con el rol de ese usuario seleccionado. Gerente elige un rol y tilda qué puede
+  ver/crear/editar/eliminar/aprobar en cada módulo (`app_modulos`/`permisos_rol`, schema_v17). No
+  es una pantalla nueva del lado del servidor — v17 ya traía la tabla, `tiene_permiso()`, la
+  política RLS que exige `rol_actual() = 'gerente'` para escribir, y el trigger que impide sacarle
+  a Gerente el acceso a Usuarios/Permisos; esta pantalla es la primera interfaz que la usa (antes
+  había que editar `permisos_rol` directo en el SQL Editor de Supabase). Cada casilla guarda sola
+  al tocarla (actualización optimista con `PermisosGestionService.alternar`, que deshace el cambio
+  si el servidor lo rechaza) — no hay un botón "Guardar" aparte. Importante: esto administra los
+  PERMISOS de los 11 roles que YA EXISTEN (`Rol.todos`), no crea roles nuevos — agregar un rol
+  nuevo sigue siendo un cambio de código en ambos lados (`Rol` en `lib/core/constants.dart` y
+  `rol_valido()` en SQL), como dice la sección de Roles más abajo.
+
+## Ayuda dentro de la app (tours guiados)
+
+"Shepherd" es una librería de tours para páginas web (HTML/JS); esta app es Flutter, así que el
+equivalente es el paquete `tutorial_coach_mark`. `lib/shared/ayuda/tour_ayuda.dart` tiene la
+infraestructura reutilizable: `PasoAyuda` (qué `GlobalKey` señalar + título + texto),
+`TourAyuda.mostrar()` (arma los `TargetFocus` y los muestra) y el widget `BotonAyuda` (el ícono "?"
+que repite el tour a pedido). Qué tour ya se vio se guarda en Hive (`HiveBoxes.preferencias`, caja
+nueva) **por dispositivo, no por usuario** — a propósito, porque en la fábrica suele ser la misma
+computadora para varios turnos/roles. `TourAyuda.mostrar` descarta solo los pasos cuyo `GlobalKey`
+no está montado en ese momento (ej. una tarjeta que ese rol no ve), en vez de romper.
+
+Cada `PasoAyuda` también sirve de `Tooltip` permanente: `PasoAyuda.envolver(child)` devuelve el
+mismo `KeyedSubtree` de antes pero adentro de un `Tooltip` con el título y el texto del paso —
+así no hace falta repetir el recorrido completo para acordarse de qué hace un campo puntual: al
+pasar el mouse por encima (o mantener presionado en el celular) aparece la misma explicación.
+Como el texto sale del mismo `PasoAyuda` que usa el tour, no hay una copia aparte que se pueda
+desincronizar. Por esto cada pantalla guarda sus pasos como CAMPOS (`final _pasoX = PasoAyuda(...)`)
+en vez de reconstruirlos cada vez dentro de `_pasosAyuda()` — `_pasosAyuda()` ahora solo devuelve
+`[_pasoX, _pasoY, ...]`, y cada lugar que antes hacía `KeyedSubtree(key: _claveX, child: Y)` pasó a
+`_pasoX.envolver(Y)`. Todos los tours ya listados arriba tienen esto.
+
+Cada pantalla principal del menú lateral tiene su propio tour: se reproduce solo una vez por
+pantalla (`soloSiNoVisto: true`, guardado en Hive por dispositivo) y después queda un botón "?"
+(`BotonAyuda`) en el encabezado para repetirlo las veces que haga falta — es la app entera, no solo
+Inicio y Jarabes. Están: `inicio`, `jarabes`, `almacenes`, `recepciones`, `entregas`, `solicitudes`,
+`soplado`, `calidad`, `llenadora`, `codificacion`, `salidas`, `mermas`, `soda_caustica`,
+`informe_produccion`, `produccion_del_dia`, `historial`, `usuarios` (los `idTour` de cada una).
+Configuración, Manual de usuario y Permisos no tienen tour: son pantallas de referencia/ajuste, no
+flujos de trabajo diarios con varios pasos que valga la pena señalar. Agregar uno a una pantalla
+nueva es mecánico: unos `GlobalKey` como campos del `State`, envolver cada sección con
+`KeyedSubtree(key: ..., child: ...)` (o pasarle `key:` directo si el widget lo acepta, como
+`Text`), una lista `_pasosAyuda()` con `PasoAyuda` por cada uno, llamar
+`TourAyuda.mostrar(context, idTour: '<algo único>', soloSiNoVisto: true, pasos: _pasosAyuda())`
+en un `addPostFrameCallback` dentro de `initState`, y agregar `BotonAyuda(idTour: ..., pasos:
+_pasosAyuda)` en el encabezado.
+
+**Cuidado al agregar un tour a una pantalla nueva** — dos bugs reales que salieron al construir
+los primeros (los arreglé, quedan documentados para no repetirlos, y se repitieron a propósito bien
+en el resto):
+1. Si el contenedor con las secciones es un `ListView` (o cualquier `Sliver` perezoso), lo que
+   está fuera de la pantalla al momento de entrar TODAVÍA NO EXISTE en el árbol — su `GlobalKey`
+   da `currentContext: null` y `TourAyuda.mostrar` lo descarta en silencio (`pasosVisibles`), así
+   que ese paso del tour nunca aparece. Patrón usado en todas las pantallas con historial/lista sin
+   límite (Soplado, Calidad, Llenadora, Codificación, Registro de salidas, Mermas, Soda Cáustica,
+   Jarabes): las secciones "cortas" (encabezado, botón de acción, título de la lista) se agrupan en
+   un método `_encabezado(...)` que devuelve una `Column` (siempre se construye entera) y va como
+   PRIMER ítem del `ListView`; lo que sí puede crecer sin límite (el historial) se deja como ítems
+   sueltos del `ListView`, después de ese primer ítem. En pantallas sin `ListView` (Recepciones,
+   Entregas, Solicitudes, Informe de Producción, Producción del día, Historial, Usuarios — ya
+   usaban `Column`/`Expanded` de entrada, o el tour apunta a algo siempre visible arriba de una
+   lista chica) no hace falta este paso.
+   **Ojo con "Almacenes": SÍ usa `ListView`** (una corrección anterior de esta sección decía lo
+   contrario — estaba mal). Se encontró en una revisión de código que su sección de categorías
+   (`_pasoCategorias`) vivía como ítem SUELTO del `ListView`, después de `_Cabecera` (que de por sí
+   es alta: título, botones, chips de almacén, buscador, migas de pan) — en una pantalla angosta o
+   baja, esa sección podía no estar montada todavía cuando arrancaba el tour solo. Se arregló
+   moviendo esa sección DENTRO de `_Cabecera` (que ya recibe `svc` y puede calcular `hijos` ella
+   misma), igual que el resto de los pasos de Almacenes.
+   **Caso especial: "Registro de salidas"** tiene contenido eager DESPUÉS de la lista sin límite
+   (la Planilla de producción, que va después del historial de reportes cerrados) — ahí un `Column`
+   como primer ítem no alcanza, porque el problema está al FINAL, no al principio. Se resolvió con
+   un `CustomScrollView` de tres slivers: `SliverToBoxAdapter` para el encabezado,
+   `SliverList`/`SliverChildBuilderDelegate` de verdad para el historial (perezoso), y otro
+   `SliverToBoxAdapter` para la Planilla — a diferencia de los hijos de un `SliverList`, el hijo de
+   un `SliverToBoxAdapter` se monta siempre, sin importar cuántos ítems haya antes en la lista.
+   **Caso especial: tours que dependen de una carga asíncrona** (Jarabes: `_pasoPlanDelDia` apunta a
+   una tarjeta que solo existe si `_plan != null`, y `_plan` se carga con `ProduccionService.
+   planDeHoy` recién en `initState`) — lanzar el tour en el mismo `addPostFrameCallback` del
+   `initState` corre una carrera casi segura de perder contra esa carga (una llamada a red/DB no
+   termina en un frame), así que ese paso se salteaba casi siempre, no como caso raro. Se arregló
+   encadenando `_cargarPlan().then((_) => ...)` para recién ahí programar el `addPostFrameCallback`
+   del tour — así espera a que el estado (y por lo tanto el árbol) ya esté resuelto, para bien o
+   para mal (si no hay plan hoy, ese paso se sigue salteando correctamente, como ya documentaba
+   la sección de arriba).
+2. Al armar esa `Column`, hay que usar `crossAxisAlignment: CrossAxisAlignment.stretch`, NUNCA
+   `.start`: un `ListView` siempre le da a cada hijo el ancho completo (restricción fija), pero un
+   `Column` con `.start` solo alinea a la izquierda sin forzar el ancho — cualquier tarjeta sin un
+   `width` propio (`Card`, o un `Container` sin `width: double.infinity`) queda angosta, del ancho
+   de su contenido, en vez de ocupar toda la pantalla como antes.
+
+Como respaldo para cuando el tour con globitos no alcanza (o ya se cerró y nadie se acuerda cómo
+volver a abrirlo), `lib/screens/ayuda/manual_screen.dart` es un **manual de usuario escrito**, con
+lo básico de CADA módulo (no solo los que tienen tour) en lenguaje simple, sin tecnicismos. Es una
+lista de `_EntradaManual` (título + resumen + puntos) fija en el propio archivo — no sale de
+ninguna tabla. Tiene su propio ítem en el menú lateral ("Manual de usuario", siempre visible, para
+cualquier rol — a propósito no depende de permisos, porque es justamente la referencia para
+entender el sistema). Al agregar un módulo nuevo, sumarle también su entrada acá.
+
+**Bugs reales de la primera tanda de tours, encontrados por el usuario probando en el celular
+(2026-09-29), y su arreglo:**
+- El globo de un paso podía quedar tapado o cortado abajo de la pantalla, sin forma de bajar a
+  verlo: `TourAyuda.mostrar` elegía `ContentAlign.bottom` siempre, y si el objetivo estaba en la
+  mitad de abajo (ej. "Movimientos por almacén" del Inicio, casi al final) el globo se dibujaba más
+  abajo todavía, fuera de lo visible. Arreglado con `_alineacion()`: mira si el objetivo está en la
+  mitad de arriba o de abajo de la pantalla y elige `ContentAlign.top`/`.bottom` según corresponda,
+  más un `ConstrainedBox`+`SingleChildScrollView` por las dudas de que el texto de un paso sea largo.
+- Aun eligiendo bien el lado del globo, el objetivo en sí podía seguir fuera de lo visible (el
+  usuario tenía que scrollear la pantalla A MANO antes de que el tour lo señalara, algo que un tour
+  automático no debería pedir). Arreglado con `beforeFocus` en el `TutorialCoachMark`: antes de
+  iluminar cada paso, hace `Scrollable.ensureVisible(..., alignment: 0.5)` sobre el `GlobalKey` de
+  ese paso — centra el objetivo en la pantalla (o el diálogo) scrolleando solo, así el tour "se
+  mueve con lo que mira la persona" en vez de señalar algo fuera de vista.
+
+`ModalFormulario` (`lib/widgets/formulario_widgets.dart`, el marco común de casi todos los
+formularios "Nuevo X" — 24 diálogos lo usan) ahora acepta `idTour`/`pasosAyuda` opcionales: si un
+formulario los pasa, el marco se encarga solo de mostrar el tour la primera vez que se abre y de
+poner el botón "?" al lado de la "X" — el formulario solo define sus `GlobalKey` y su
+`_pasosAyuda()`, igual que ya hacía cada pantalla con `BotonAyuda`. Implementado como ejemplo en
+`features/inventario/widgets/item_form_dialog.dart` ("Nuevo ítem", `idTour: 'item_form'`); el resto
+de los formularios no tiene tour todavía — agregarlo a otro es tan mecánico como en una pantalla.
+
+## Errores de layout en móvil (encontrados probando en celular, 2026-09-29)
+
+- **Título partido letra por letra** ("Al" / "m" / "ac" / "en" / "es"): en el encabezado de
+  Almacenes, un `Row` con el título en `Expanded` y TRES botones más al lado (Balance, Salida
+  directa, Nuevo ítem) sin ningún `Expanded`/`Flexible` en ellos — en un teléfono angosto los tres
+  botones ya ocupaban más ancho que la pantalla, así que al `Expanded` del título le quedaba un
+  ancho negativo (Flutter lo deja en 0) y el texto, sin espacio para ni una letra por línea, se
+  partía carácter por carácter. Como los permisos por rol ahora son configurables desde la pantalla
+  Permisos (no fijos en el código), CUALQUIER pantalla con dos o más botones condicionales al lado
+  del título corre el mismo riesgo para algún rol que el Gerente configure con varios permisos a la
+  vez — se corrigió en las 10 pantallas que tenían esto (Almacenes, Jarabes, Entregas, Recepciones,
+  Solicitudes, Soplado, Llenadora, Codificación, Mermas, Soda Cáustica, Registro de salidas): el
+  título queda solo con el botón "?" en su `Row`, y los botones de acción pasan a un `Wrap` (si son
+  dos o más, como Almacenes/Jarabes) o a un botón solo en la línea de abajo (si es uno) — nunca los
+  tres en el mismo `Row` que el título.
+- **Etiquetas cortadas con "…"** ("Unidades po…", "Peso …", "Anch…", "Micro…"): varios formularios
+  ponían 2 o 3 campos lado a lado con `Row([Expanded(campo), SizedBox, Expanded(campo)])` de ancho
+  fijo — en un diálogo angosto (`ModalFormulario` va hasta 520px pero se achica a lo que entre en la
+  pantalla) cada campo quedaba con menos de 100px, y la etiqueta del `TextField` (que no hace wrap,
+  se corta con "…") no entraba. Se agregó `FilaCampos` (`lib/widgets/formulario_widgets.dart`): mismo
+  `Row` de 2-3 campos cuando hay ancho de sobra, pero se apila en `Column` (uno debajo del otro, a
+  todo el ancho) cuando no — mide con `LayoutBuilder`, no con un breakpoint fijo. Aplicado en todos
+  los formularios donde se encontró el patrón: `item_form_dialog` (Nuevo ítem), `linea_form_dialog`
+  (Registro de salidas), `recepcion_form_dialog`, los tres `finalizar_corrida_dialog`
+  (Soplado/Llenadora/Codificación), `analisis_form_dialog` (Calidad), `iniciar_preparado_dialog`
+  (Jarabes), `salida_directa_dialog`, y el selector de solvente/tinta de `iniciar_corrida_dialog`
+  (Codificación). La fila de "Cantidades" de Recepciones (factura/real + un desplegable de unidad de
+  ancho fijo) es un caso aparte con su propio `LayoutBuilder` inline, porque la unidad no necesita
+  repartirse el ancho como un campo más.
+- **Franja de advertencia de Flutter tapando los botones** ("Cancelar" / "Guardar contraseña" en
+  Mi perfil, y "Cancelar" / "Guardar cambios" en Usuarios): la barra de acciones de estos dos
+  diálogos (NO usan `ModalFormulario`, tienen su propia barra) era un `Row` con los dos botones sin
+  `Expanded` — en un teléfono angosto "Guardar contraseña" no entraba y Flutter dibujaba encima la
+  franja diagonal amarilla/negra de "RenderFlex overflowed". Reemplazado por `OverflowBar` (el
+  widget de Flutter pensado justo para esto, el mismo que usa `AlertDialog.actions` por dentro): los
+  acomoda en fila si entran, y si no, los apila en columna — sin overflow posible.
 
 ## Roles (organigrama de Producción)
 

@@ -6,6 +6,7 @@ import '../../models/datos_empleado.dart';
 import '../../services/auth_service.dart';
 import '../../services/datos_empleado_service.dart';
 import '../../services/supabase_service.dart';
+import '../../shared/ayuda/tour_ayuda.dart';
 import '../../utils/notificaciones.dart';
 import 'usuario_form_dialog.dart';
 
@@ -27,11 +28,30 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   List<Map<String, dynamic>> _bloqueadas = []; // cuentas con bloqueo de login activo
   bool _cargando = true;
 
+  final _pasoNuevoUsuario = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Nuevo usuario',
+    texto: 'Al crear o editar un usuario elegís su rol; ahí mismo podés ver y ajustar '
+        'los permisos de ese rol.',
+  );
+  final _pasoLista = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Lista de usuarios',
+    texto: 'Tocá el lápiz para editar nombre, correo, rol, área o estado de un usuario.',
+  );
+
   @override
   void initState() {
     super.initState();
     _cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'usuarios', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
   }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoNuevoUsuario, _pasoLista];
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
@@ -144,15 +164,24 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Usuarios',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Usuarios',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              BotonAyuda(idTour: 'usuarios', pasos: _pasosAyuda),
+            ],
+          ),
           if (puedeAdministrar) ...[
             const SizedBox(height: 12),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-              onPressed: () => _abrirFormulario(),
-              icon: const Icon(Icons.person_add),
-              label: const Text('Nuevo usuario'),
+            _pasoNuevoUsuario.envolver(
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                onPressed: () => _abrirFormulario(),
+                icon: const Icon(Icons.person_add),
+                label: const Text('Nuevo usuario'),
+              ),
             ),
           ],
           if (puedeAdministrar && _avisoCorreos != null) ...[
@@ -217,9 +246,10 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           ],
           const SizedBox(height: 16),
           Expanded(
-            child: _cargando
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
+            child: _pasoLista.envolver(
+              _cargando
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.separated(
                     itemCount: _usuarios.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) {
@@ -282,6 +312,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                       );
                     },
                   ),
+            ),
           ),
         ],
       ),

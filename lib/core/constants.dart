@@ -181,6 +181,7 @@ class HiveBoxes {
   static const colaMovimientos = 'box_cola_movimientos'; // pendientes de subir
   static const sesion = 'box_sesion';
   static const perfilPendiente = 'box_perfil_pendiente'; // foto sin subir
+  static const preferencias = 'box_preferencias'; // ej. tours de ayuda ya vistos
 }
 
 class AppColors {

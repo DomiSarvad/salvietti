@@ -192,28 +192,20 @@ class _IniciarPreparadoDialogState extends State<IniciarPreparadoDialog> {
                   style: TextStyle(fontSize: 11, color: Colors.black45)),
             ),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _cantidad,
-                  autofocus: widget.saborInicial != null,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => _programarVerificacion(),
-                  decoration: _deco('Cantidad de preparados', ayuda: 'ej. 2, 1, 0.5'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _tanque,
-                  keyboardType: TextInputType.number,
-                  decoration: _deco('Tanque (opcional)'),
-                ),
-              ),
-            ],
-          ),
+          FilaCampos([
+            TextField(
+              controller: _cantidad,
+              autofocus: widget.saborInicial != null,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => _programarVerificacion(),
+              decoration: _deco('Cantidad de preparados', ayuda: 'ej. 2, 1, 0.5'),
+            ),
+            TextField(
+              controller: _tanque,
+              keyboardType: TextInputType.number,
+              decoration: _deco('Tanque (opcional)'),
+            ),
+          ]),
           const SizedBox(height: 12),
           if (_verificando)
             const Padding(

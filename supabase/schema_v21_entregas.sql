@@ -251,6 +251,13 @@ begin
         end if;
 
         if v_cant > 0 then
+            -- Bloquea el ítem antes de sumar el stock: lockear solo el pedido
+            -- (arriba) no alcanza — dos entregas de PEDIDOS DISTINTOS, o una
+            -- entrega junto con una salida directa/devolución, pueden tomar
+            -- el mismo ítem+almacén a la vez y las dos leer el mismo saldo
+            -- stale (mismo caso que inv_registrar_movimiento/soda_registrar_
+            -- entrega/inv_registrar_salida_directa/soplado_finalizar_corrida).
+            perform 1 from public.inv_items where id = v_l.item_id for update;
             select coalesce(sum(cantidad), 0) into v_total
               from public.inv_movimientos
              where item_id = v_l.item_id and almacen_id = v_p.almacen_origen;

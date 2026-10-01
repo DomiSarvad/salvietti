@@ -132,32 +132,20 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
             style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_preformas, 'Preformas usadas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_mermaPreforma, 'Merma de preforma')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_preformas, 'Preformas usadas'),
+            _campoNum(_mermaPreforma, 'Merma de preforma'),
+          ]),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_botellasSopladas, 'Botellas sopladas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_mermaSoplado, 'Merma de soplado')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_botellasSopladas, 'Botellas sopladas'),
+            _campoNum(_mermaSoplado, 'Merma de soplado'),
+          ]),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_botellasEtiquetadas, 'Botellas etiquetadas (opcional)')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_mermaEtiquetado, 'Merma de etiquetado')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_botellasEtiquetadas, 'Botellas etiquetadas (opcional)'),
+            _campoNum(_mermaEtiquetado, 'Merma de etiquetado'),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _motivoMerma,
@@ -168,21 +156,15 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
           const SizedBox(height: 16),
           const Text('Parada de máquina (opcional)', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_tiempoParada, 'Tiempo de parada (min)')),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _motivoParada,
-                  maxLength: 300,
-                  decoration: _deco('Motivo', ayuda: hayParada ? 'Obligatorio' : null)
-                      .copyWith(counterText: ''),
-                ),
-              ),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_tiempoParada, 'Tiempo de parada (min)'),
+            TextField(
+              controller: _motivoParada,
+              maxLength: 300,
+              decoration: _deco('Motivo', ayuda: hayParada ? 'Obligatorio' : null)
+                  .copyWith(counterText: ''),
+            ),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _obs,

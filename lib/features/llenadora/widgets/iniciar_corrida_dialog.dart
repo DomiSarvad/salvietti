@@ -154,17 +154,10 @@ class _IniciarCorridaDialogState extends State<IniciarCorridaDialog> {
             const SizedBox(height: 12),
           ],
           if (_preparado == null)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                    child:
-                        TextField(controller: _lote, decoration: _deco('N° de lote (opcional)'))),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: TextField(controller: _tanque, decoration: _deco('Tanque (opcional)'))),
-              ],
-            ),
+            FilaCampos([
+              TextField(controller: _lote, decoration: _deco('N° de lote (opcional)')),
+              TextField(controller: _tanque, decoration: _deco('Tanque (opcional)')),
+            ]),
           const SizedBox(height: 12),
           Autocomplete<ItemInventario>(
             displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',

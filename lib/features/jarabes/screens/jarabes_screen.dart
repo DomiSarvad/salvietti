@@ -4,6 +4,7 @@ import '../../../core/constants.dart';
 import '../../../models/produccion.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/produccion_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../../../utils/texto.dart';
@@ -29,7 +30,8 @@ class JarabesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
-      create: (_) => JarabesService(SupabaseJarabesRepository(), usuario)..iniciar(),
+      create: (_) =>
+          JarabesService(SupabaseJarabesRepository(), usuario)..iniciar(),
       child: _Vista(saborInicial: saborInicial),
     );
   }
@@ -48,11 +50,42 @@ class _VistaState extends State<_Vista> {
   bool _cargandoPlan = true;
   bool _autoAbierto = false;
 
+  final _pasoNuevoPreparado = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Nuevo preparado',
+    texto: 'Elegís el sabor y la cantidad; el sistema verifica solo si alcanza el '
+        'insumo. Si falta, ofrece mandar la solicitud a Almacén ahí mismo.',
+  );
+  final _pasoPlanDelDia = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Plan de hoy',
+    texto: 'Lo que Producción planificó para hoy, de referencia — tocá un producto '
+        'para preparar ese sabor. No obliga: se puede elegir cualquier otro si hace falta.',
+  );
+  final _pasoHistorial = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Historial',
+    texto: 'Los preparados ya finalizados o anulados, con su lote y responsable.',
+  );
+
   @override
   void initState() {
     super.initState();
-    _cargarPlan();
+    // El tour espera a que termine de cargar el plan (red/DB) antes de armar
+    // sus pasos: si arrancaba apenas montaba la pantalla (antes de la
+    // respuesta), "Plan de hoy" todavía no existía en el árbol y ese paso
+    // se salteaba en silencio casi siempre, no solo quedando sin plan de hoy.
+    _cargarPlan().then((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          TourAyuda.mostrar(context,
+              idTour: 'jarabes', soloSiNoVisto: true, pasos: _pasosAyuda());
+        }
+      });
+    });
   }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoNuevoPreparado, _pasoPlanDelDia, _pasoHistorial];
 
   /// El plan del día (de Producción, un subsistema aparte) se muestra acá
   /// solo como referencia: qué sabor conviene preparar hoy. No restringe
@@ -71,7 +104,8 @@ class _VistaState extends State<_Vista> {
   }
 
   Set<String> get _saboresEnPlanHoy => {
-        for (final d in _plan?.detalle ?? const <PlanProduccionDetalle>[]) sinTildes(d.sabor),
+        for (final d in _plan?.detalle ?? const <PlanProduccionDetalle>[])
+          sinTildes(d.sabor),
       };
 
   bool _esHoy(DateTime d) {
@@ -86,18 +120,24 @@ class _VistaState extends State<_Vista> {
   /// que el cruce con el plan haya encontrado o no una fila para marcar.
   Set<String> _saboresYaPreparadosHoy(JarabesService svc) => {
         for (final p in svc.preparados)
-          if (p.estado == EstadoPreparado.finalizada && p.sabor != null && _esHoy(p.fecha))
+          if (p.estado == EstadoPreparado.finalizada &&
+              p.sabor != null &&
+              _esHoy(p.fecha))
             sinTildes(p.sabor!),
       };
 
-  Future<void> _iniciar(BuildContext context, JarabesService svc, {Sabor? saborInicial}) =>
+  Future<void> _iniciar(BuildContext context, JarabesService svc,
+          {Sabor? saborInicial}) =>
       showDialog<bool>(
         context: context,
         builder: (_) => IniciarPreparadoDialog(
-            servicio: svc, saboresEnPlanHoy: _saboresEnPlanHoy, saborInicial: saborInicial),
+            servicio: svc,
+            saboresEnPlanHoy: _saboresEnPlanHoy,
+            saborInicial: saborInicial),
       );
 
-  Future<void> _proponerReceta(BuildContext context, JarabesService svc) => showDialog<bool>(
+  Future<void> _proponerReceta(BuildContext context, JarabesService svc) =>
+      showDialog<bool>(
         context: context,
         builder: (_) => ProponerRecetaDialog(servicio: svc),
       );
@@ -116,7 +156,9 @@ class _VistaState extends State<_Vista> {
   /// para volver a abrirlo después (si se cerró sin querer, o para preparar
   /// otro del mismo plan) está el mismo botón en la tarjeta "Plan de hoy".
   void _abrirAutoSiCorresponde(BuildContext context, JarabesService svc) {
-    if (_autoAbierto || widget.saborInicial == null || !svc.puedeIniciar) return;
+    if (_autoAbierto || widget.saborInicial == null || !svc.puedeIniciar) {
+      return;
+    }
     _autoAbierto = true;
     final preseleccionado = _buscarSaborPorNombre(svc, widget.saborInicial!);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -127,7 +169,8 @@ class _VistaState extends State<_Vista> {
   /// Igual que arriba, pero se puede repetir todas las veces que haga
   /// falta: tocar un producto de "Plan de hoy" siempre abre "Nuevo
   /// preparado" con ese sabor, aunque ya se haya usado o cerrado antes.
-  void _iniciarDesdePlan(BuildContext context, JarabesService svc, String sabor) =>
+  void _iniciarDesdePlan(
+          BuildContext context, JarabesService svc, String sabor) =>
       _iniciar(context, svc, saborInicial: _buscarSaborPorNombre(svc, sabor));
 
   @override
@@ -155,37 +198,82 @@ class _VistaState extends State<_Vista> {
 
     _abrirAutoSiCorresponde(context, svc);
 
+    // El historial de preparados puede crecer mucho, así que sigue siendo
+    // una lista "perezosa" (ListView de verdad, arma cada tarjeta recién
+    // cuando se acerca a la pantalla). Todo lo de ARRIBA de "Historial"
+    // (encabezado, plan de hoy, en curso) va adentro de un único Column,
+    // así siempre se construye entero de entrada — si no, con varios
+    // preparados "en curso" el título "Historial" podía quedar todavía sin
+    // construir cuando arranca el tour, y ese paso se salteaba en silencio.
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        _encabezadoYPlan(context, svc),
+        if (svc.historial.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('Todavía no hay preparados finalizados.',
+                style: TextStyle(color: Colors.black54)),
+          )
+        else
+          for (final p in svc.historial) _TarjetaPreparado(svc: svc, p: p),
+      ],
+    );
+  }
+
+  Widget _encabezadoYPlan(BuildContext context, JarabesService svc) {
+    // stretch, no start: las tarjetas "en curso" (Card, sin ancho propio)
+    // antes ocupaban todo el ancho porque eran hijas directas del
+    // ListView, que fuerza esa restricción; movidas acá adentro con
+    // "start" habrían quedado angostas, del ancho de su contenido.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             const Expanded(
-              child: Text('Jarabes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              child: Text('Jarabes',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ),
+            BotonAyuda(idTour: 'jarabes', pasos: _pasosAyuda),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Wrap, no Row: con los dos botones juntos (un rol puede tener
+        // ambos permisos a la vez) un Row fijo se desborda en pantallas
+        // angostas y el título de arriba queda con ancho negativo. Acá
+        // simplemente pasan a la siguiente línea.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
             if (svc.puedeProponerReceta)
               OutlinedButton.icon(
                 onPressed: () => _proponerReceta(context, svc),
                 icon: const Icon(Icons.receipt_long_outlined, size: 18),
                 label: const Text('Proponer receta'),
               ),
-            const SizedBox(width: 8),
             if (svc.puedeIniciar)
-              FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                onPressed: () => _iniciar(context, svc),
-                icon: const Icon(Icons.add),
-                label: const Text('Nuevo preparado'),
+              _pasoNuevoPreparado.envolver(
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primario),
+                  onPressed: () => _iniciar(context, svc),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Nuevo preparado'),
+                ),
               ),
           ],
         ),
         const SizedBox(height: 16),
         if (!_cargandoPlan && _plan != null && _plan!.detalle.isNotEmpty) ...[
-          _SeccionPlanDelDia(
-            plan: _plan!,
-            puedeIniciar: svc.puedeIniciar,
-            onPreparar: (sabor) => _iniciarDesdePlan(context, svc, sabor),
-            saboresYaPreparados: _saboresYaPreparadosHoy(svc),
+          _pasoPlanDelDia.envolver(
+            _SeccionPlanDelDia(
+              plan: _plan!,
+              puedeIniciar: svc.puedeIniciar,
+              onPreparar: (sabor) => _iniciarDesdePlan(context, svc, sabor),
+              saboresYaPreparados: _saboresYaPreparadosHoy(svc),
+            ),
           ),
           const SizedBox(height: 20),
         ],
@@ -196,22 +284,19 @@ class _VistaState extends State<_Vista> {
         _SeccionAvanceSoplado(svc: svc),
         const SizedBox(height: 20),
         if (svc.enCurso.isNotEmpty) ...[
-          const Text('En curso', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const Text('En curso',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           const SizedBox(height: 8),
           for (final p in svc.enCurso)
-            _TarjetaPreparado(svc: svc, p: p, planHoy: _plan, onFinalizado: _cargarPlan),
+            _TarjetaPreparado(
+                svc: svc, p: p, planHoy: _plan, onFinalizado: _cargarPlan),
           const SizedBox(height: 20),
         ],
-        const Text('Historial', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        _pasoHistorial.envolver(
+          const Text('Historial',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ),
         const SizedBox(height: 8),
-        if (svc.historial.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Todavía no hay preparados finalizados.',
-                style: TextStyle(color: Colors.black54)),
-          )
-        else
-          for (final p in svc.historial) _TarjetaPreparado(svc: svc, p: p),
       ],
     );
   }
@@ -228,6 +313,7 @@ class _SeccionPlanDelDia extends StatelessWidget {
   final PlanProduccion plan;
   final bool puedeIniciar;
   final void Function(String sabor) onPreparar;
+
   /// Sabores (normalizados con [sinTildes]) que Jarabes ya preparó hoy —
   /// para avisarle a quien prepara que ese paso ya está hecho, aunque el
   /// producto siga "pendiente" acá (eso lo tilda quien termina de
@@ -255,7 +341,8 @@ class _SeccionPlanDelDia extends StatelessWidget {
           const Row(children: [
             Icon(Icons.factory_outlined, size: 18, color: AppColors.primario),
             SizedBox(width: 8),
-            Text('Plan de hoy (Producción)', style: TextStyle(fontWeight: FontWeight.w700)),
+            Text('Plan de hoy (Producción)',
+                style: TextStyle(fontWeight: FontWeight.w700)),
           ]),
           const SizedBox(height: 2),
           Text(
@@ -272,20 +359,28 @@ class _SeccionPlanDelDia extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 onTap: puedeIniciar ? () => onPreparar(d.sabor) : null,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
                   child: Row(
                     children: [
-                      Icon(d.completado ? Icons.check_circle : Icons.radio_button_unchecked,
+                      Icon(
+                          d.completado
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
                           size: 16,
-                          color: d.completado ? const Color(0xFF16A34A) : Colors.black38),
+                          color: d.completado
+                              ? const Color(0xFF16A34A)
+                              : Colors.black38),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(d.nombreProducto ?? d.sabor,
                             style: const TextStyle(fontSize: 13),
                             overflow: TextOverflow.ellipsis),
                       ),
-                      if (!d.completado && saboresYaPreparados.contains(sinTildes(d.sabor))) ...[
-                        const Icon(Icons.water_drop, size: 12, color: Color(0xFF2563EB)),
+                      if (!d.completado &&
+                          saboresYaPreparados.contains(sinTildes(d.sabor))) ...[
+                        const Icon(Icons.water_drop,
+                            size: 12, color: Color(0xFF2563EB)),
                         const SizedBox(width: 3),
                         const Text('Jarabes listo',
                             style: TextStyle(
@@ -295,7 +390,8 @@ class _SeccionPlanDelDia extends StatelessWidget {
                         const SizedBox(width: 8),
                       ],
                       Text('${fmtNum(d.litrosPlanificados, decimales: 0)} L',
-                          style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54)),
                       if (puedeIniciar) ...[
                         const SizedBox(width: 6),
                         const Icon(Icons.play_circle_outline,
@@ -341,12 +437,16 @@ class _SeccionAvanceSoplado extends StatelessWidget {
               children: [
                 for (final a in svc.avanceSoplado)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                        color: const Color(0xFFF5F7FA), borderRadius: BorderRadius.circular(10)),
-                    child: Text('${a.sabor} · ${a.presentacion}: '
+                        color: const Color(0xFFF5F7FA),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Text(
+                        '${a.sabor} · ${a.presentacion}: '
                         '${fmtNum(a.cajasSopladas, decimales: 0)} cajas',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
                   ),
               ],
             ),
@@ -398,12 +498,14 @@ class _TarjetaPreparado extends StatelessWidget {
   final JarabesService svc;
   final Preparado p;
   final PlanProduccion? planHoy;
+
   /// Se llama al cerrar el diálogo de finalizar (haya quedado marcado el
   /// plan o no), para refrescar "Plan de hoy" y que se vea al toque el
   /// aviso "Jarabes listo" / el tilde, sin tener que salir y volver a
   /// entrar a la pantalla.
   final VoidCallback? onFinalizado;
-  const _TarjetaPreparado({required this.svc, required this.p, this.planHoy, this.onFinalizado});
+  const _TarjetaPreparado(
+      {required this.svc, required this.p, this.planHoy, this.onFinalizado});
 
   Color _color() {
     switch (p.estado) {
@@ -419,7 +521,8 @@ class _TarjetaPreparado extends StatelessWidget {
   Future<void> _finalizar(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => FinalizarPreparadoDialog(servicio: svc, preparado: p, planHoy: planHoy),
+      builder: (_) => FinalizarPreparadoDialog(
+          servicio: svc, preparado: p, planHoy: planHoy),
     );
     if (ok == true) onFinalizado?.call();
   }
@@ -438,9 +541,12 @@ class _TarjetaPreparado extends StatelessWidget {
             decoration: const InputDecoration(labelText: 'Motivo'),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar')),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Anular')),
+                onPressed: () => Navigator.pop(ctx, ctrl.text),
+                child: const Text('Anular')),
           ],
         );
       },
@@ -448,7 +554,9 @@ class _TarjetaPreparado extends StatelessWidget {
     if (motivo == null || !context.mounted) return;
     final error = await svc.anularPreparado(p, motivo);
     if (!context.mounted) return;
-    error == null ? mostrarExito(context, 'Preparado anulado.') : mostrarError(context, error);
+    error == null
+        ? mostrarExito(context, 'Preparado anulado.')
+        : mostrarError(context, error);
   }
 
   @override
@@ -466,16 +574,20 @@ class _TarjetaPreparado extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text('${p.sabor ?? ''} · Lote ${p.nLote}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                       color: _color().withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20)),
                   child: Text(p.estado.etiqueta,
                       style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600, color: _color())),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _color())),
                 ),
               ],
             ),
@@ -488,10 +600,16 @@ class _TarjetaPreparado extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 6, children: [
-              _pill('${fmtNum(p.cantidadPreparados, decimales: 2)} preparado(s)', AppColors.negro),
-              if (p.litros != null) _pill('${fmtNum(p.litros, decimales: 0)} L', AppColors.primario),
+              _pill(
+                  '${fmtNum(p.cantidadPreparados, decimales: 2)} preparado(s)',
+                  AppColors.negro),
+              if (p.litros != null)
+                _pill(
+                    '${fmtNum(p.litros, decimales: 0)} L', AppColors.primario),
               if (p.tanque != null) _pill('Tanque ${p.tanque}', Colors.black54),
-              if (p.brix != null) _pill('Brix ${fmtNum(p.brix, decimales: 1)}', const Color(0xFF5BC0DE)),
+              if (p.brix != null)
+                _pill('Brix ${fmtNum(p.brix, decimales: 1)}',
+                    const Color(0xFF5BC0DE)),
             ]),
             if (p.observaciones != null)
               Padding(
@@ -502,11 +620,13 @@ class _TarjetaPreparado extends StatelessWidget {
               const SizedBox(height: 8),
               Wrap(spacing: 8, children: [
                 FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primario),
                     onPressed: () => _finalizar(context),
                     child: const Text('Finalizar')),
                 TextButton(
-                    style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626)),
                     onPressed: () => _anular(context),
                     child: const Text('Anular')),
               ]),
@@ -520,8 +640,10 @@ class _TarjetaPreparado extends StatelessWidget {
   Widget _pill(String texto, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20)),
         child: Text(texto,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: color)),
       );
 }

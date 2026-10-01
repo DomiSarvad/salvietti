@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/salidas_modelos.dart';
@@ -25,8 +26,43 @@ class SalidasScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoAbrirReporte = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Abrir reporte',
+    texto: 'Abrí el reporte del turno para ir cargando lo que se produjo de cada '
+        'sabor y formato. No vuelve a descontar el almacén: eso ya lo hizo Almacén al '
+        'entregar el pedido.',
+  );
+  final _pasoHistorial = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Historial',
+    texto: 'Los reportes ya cerrados de días anteriores.',
+  );
+  final _pasoPlanilla = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Planilla de producción',
+    texto: 'Se arma sola con lo cargado en los reportes de arriba.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'salidas', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoAbrirReporte, _pasoHistorial, _pasoPlanilla];
 
   Future<void> _nuevoReporte(BuildContext context, SalidasService svc) async {
     final turno = await showDialog<Turno>(
@@ -83,8 +119,51 @@ class _Vista extends StatelessWidget {
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+    // El historial de reportes cerrados puede crecer mucho: queda en un
+    // SliverList de verdad (perezoso). A diferencia de otras pantallas, acá
+    // la Planilla va DESPUÉS de esa lista sin límite — un `ListView` común
+    // no sirve: su encabezado podía quedar mounteado a tiempo por ser el
+    // primer ítem, pero la Planilla, al final, dependía de haber scrolleado
+    // hasta ahí para existir en el árbol, y el tour la salteaba en silencio.
+    // Con `SliverToBoxAdapter` tanto el encabezado como la Planilla se
+    // montan siempre, sin importar cuántos reportes cerrados haya en medio.
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          sliver: SliverToBoxAdapter(child: _encabezado(context, svc)),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: svc.cerrados.isEmpty
+              ? const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('Todavía no hay reportes cerrados.',
+                        style: TextStyle(color: Colors.black54)),
+                  ),
+                )
+              : SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final r = svc.cerrados[i];
+                      return _TarjetaReporte(svc: svc, r: r, onTap: () => _abrir(context, svc, r));
+                    },
+                    childCount: svc.cerrados.length,
+                  ),
+                ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          sliver: SliverToBoxAdapter(child: _pasoPlanilla.envolver(_SeccionPlanilla(svc: svc))),
+        ),
+      ],
+    );
+  }
+
+  Widget _encabezado(BuildContext context, SalidasService svc) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
@@ -92,15 +171,23 @@ class _Vista extends StatelessWidget {
               child: Text('Registro de salidas',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ),
-            if (svc.puedeCrear)
+            BotonAyuda(idTour: 'salidas', pasos: _pasosAyuda),
+          ],
+        ),
+        if (svc.puedeCrear) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _pasoAbrirReporte.envolver(
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
                 onPressed: () => _nuevoReporte(context, svc),
                 icon: const Icon(Icons.add),
                 label: const Text('Abrir reporte'),
               ),
-          ],
-        ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         if (svc.abiertos.isNotEmpty) ...[
           const Text('Abiertos', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
@@ -108,17 +195,11 @@ class _Vista extends StatelessWidget {
           for (final r in svc.abiertos) _TarjetaReporte(svc: svc, r: r, onTap: () => _abrir(context, svc, r)),
           const SizedBox(height: 20),
         ],
-        const Text('Historial', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        _pasoHistorial.envolver(
+          const Text('Historial',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        ),
         const SizedBox(height: 8),
-        if (svc.cerrados.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Todavía no hay reportes cerrados.', style: TextStyle(color: Colors.black54)),
-          )
-        else
-          for (final r in svc.cerrados) _TarjetaReporte(svc: svc, r: r, onTap: () => _abrir(context, svc, r)),
-        const SizedBox(height: 20),
-        _SeccionPlanilla(svc: svc),
       ],
     );
   }

@@ -5,6 +5,7 @@ import '../../core/constants.dart';
 import '../../models/produccion.dart';
 import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
+import '../../shared/ayuda/tour_ayuda.dart';
 import '../../utils/formatters.dart';
 import 'constructor_plan_dialog.dart';
 import 'editar_consumo_dialog.dart';
@@ -33,11 +34,33 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
   List<ProductoTerminado> _productos = [];
   bool _cargando = true;
 
+  final _pasoArmarPlan = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Armar plan',
+    texto: 'El Jefe de Producción arma acá la tabla del día: qué productos y cuántos '
+        'litros planificados. Al guardar, pasan a la lista de tareas de abajo.',
+  );
+  final _pasoLista = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Marcar como completado',
+    texto: 'Tocá "Marcar hecho" cuando termine de embotellarse un producto: el sistema '
+        'descuenta automáticamente materia prima, preformas y tapas según la receta y '
+        'las botellas producidas.',
+  );
+
   @override
   void initState() {
     super.initState();
     _cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context,
+            idTour: 'produccion_del_dia', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
   }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoArmarPlan, _pasoLista];
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
@@ -204,8 +227,15 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Producción del día',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Producción del día',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              BotonAyuda(idTour: 'produccion_del_dia', pasos: _pasosAyuda),
+            ],
+          ),
           const SizedBox(height: 12),
           // Wrap en vez de Row: con varios botones, en una ventana angosta
           // un Row fijo se desborda; acá simplemente pasan a la siguiente
@@ -237,12 +267,14 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                   icon: const Icon(Icons.tune),
                   label: const Text('Editar consumo'),
                 ),
-                FilledButton.icon(
-                  style:
-                      FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                  onPressed: _armarPlan,
-                  icon: const Icon(Icons.table_chart_outlined),
-                  label: const Text('Armar plan'),
+                _pasoArmarPlan.envolver(
+                  FilledButton.icon(
+                    style:
+                        FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                    onPressed: _armarPlan,
+                    icon: const Icon(Icons.table_chart_outlined),
+                    label: const Text('Armar plan'),
+                  ),
                 ),
               ],
             ],
@@ -261,9 +293,10 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
           ],
           const SizedBox(height: 16),
           Expanded(
-            child: _plan == null || _plan!.detalle.isEmpty
-                ? const Center(child: Text('Aún no hay productos planificados hoy.'))
-                : ListView(
+            child: _pasoLista.envolver(
+              _plan == null || _plan!.detalle.isEmpty
+                  ? const Center(child: Text('Aún no hay productos planificados hoy.'))
+                  : ListView(
                     children: _plan!.detalle
                         .map((d) => Card(
                               child: ListTile(
@@ -318,6 +351,7 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                             ))
                         .toList(),
                   ),
+            ),
           ),
         ],
       ),

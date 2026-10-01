@@ -111,26 +111,18 @@ class _SalidaDirectaDialogState extends State<SalidaDirectaDialog> {
             onChanged: (v) => setState(() => _area = v),
           ),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _rollos,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _deco('Cantidad de rollos (opcional)', ayuda: 'Solo de referencia'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _peso,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _deco('Peso real${_item == null ? '' : ' (${_item!.unidad})'}'),
-                ),
-              ),
-            ],
-          ),
+          FilaCampos([
+            TextField(
+              controller: _rollos,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _deco('Cantidad de rollos (opcional)', ayuda: 'Solo de referencia'),
+            ),
+            TextField(
+              controller: _peso,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _deco('Peso real${_item == null ? '' : ' (${_item!.unidad})'}'),
+            ),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _motivo,

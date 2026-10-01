@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/bitacora_service.dart';
+import '../../shared/ayuda/tour_ayuda.dart';
 import '../../utils/formatters.dart';
 
 /// Bitácora completa: "qué usuario entra y qué hace" (acciones) y el
@@ -18,11 +19,25 @@ class _HistorialScreenState extends State<HistorialScreen>
   List<Map<String, dynamic>> _eliminaciones = [];
   bool _cargando = true;
 
+  final _pasoTabs = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Acciones y eliminaciones',
+    texto: 'Qué usuario entra y qué hace (acciones), y aparte todo lo eliminado '
+        'lógicamente — acá nunca se borra nada del todo.',
+  );
+
   @override
   void initState() {
     super.initState();
     _cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'historial', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
   }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoTabs];
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
@@ -43,15 +58,24 @@ class _HistorialScreenState extends State<HistorialScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Historial y Bitácora',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          TabBar(
-            controller: _tabs,
-            isScrollable: true,
-            tabs: const [
-              Tab(text: 'Acciones de usuarios'),
-              Tab(text: 'Eliminaciones lógicas'),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Historial y Bitácora',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              BotonAyuda(idTour: 'historial', pasos: _pasosAyuda),
             ],
+          ),
+          _pasoTabs.envolver(
+            TabBar(
+              controller: _tabs,
+              isScrollable: true,
+              tabs: const [
+                Tab(text: 'Acciones de usuarios'),
+                Tab(text: 'Eliminaciones lógicas'),
+              ],
+            ),
           ),
           Expanded(
             child: _cargando

@@ -176,6 +176,10 @@ class RecepcionesService extends ChangeNotifier {
       _proveedores ??= await _repo.proveedores();
 
   /// Devuelve el proveedor creado, o el que ya existía con ese nombre.
+  /// Null solo significa "nombre inválido" (2 a 80 caracteres); un error de
+  /// conexión o de permisos se deja subir como excepción, para no
+  /// mostrarle al usuario el mismo mensaje de "nombre inválido" cuando en
+  /// realidad fue un problema de red.
   Future<Proveedor?> crearProveedor(String nombre) async {
     final limpio = nombre.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (limpio.length < 2 || limpio.length > 80) return null;
@@ -183,13 +187,9 @@ class RecepcionesService extends ChangeNotifier {
     final existente =
         lista.where((p) => sinTildes(p.nombre) == sinTildes(limpio)).firstOrNull;
     if (existente != null) return existente;
-    try {
-      final nuevo = await _repo.crearProveedor(limpio);
-      _proveedores = [...lista, nuevo]..sort((a, b) => a.nombre.compareTo(b.nombre));
-      return nuevo;
-    } catch (_) {
-      return null;
-    }
+    final nuevo = await _repo.crearProveedor(limpio);
+    _proveedores = [...lista, nuevo]..sort((a, b) => a.nombre.compareTo(b.nombre));
+    return nuevo;
   }
 
   /// SENASAG ya conocido para ese producto y proveedor, para rellenar solo.

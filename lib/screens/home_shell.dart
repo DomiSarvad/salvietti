@@ -18,6 +18,8 @@ import '../features/registro_salidas/screens/salidas_screen.dart';
 import '../features/mermas/screens/mermas_screen.dart';
 import '../features/soda_caustica/screens/soda_screen.dart';
 import '../features/informe_gerente/screens/informe_screen.dart';
+import 'ayuda/manual_screen.dart';
+import 'configuracion/configuracion_screen.dart';
 import 'produccion/produccion_planner_screen.dart';
 import 'historial/historial_screen.dart';
 import 'usuarios/usuarios_screen.dart';
@@ -98,6 +100,10 @@ class _HomeShellState extends State<HomeShell> {
         return const HistorialScreen();
       case 'usuarios':
         return const UsuariosScreen();
+      case 'configuracion':
+        return const ConfiguracionScreen();
+      case 'manual':
+        return const ManualScreen();
       default:
         return DashboardScreen(
             onAbrirInventario: _abrirAlmacen, onAbrirProduccion: _abrirProduccion);
@@ -122,6 +128,8 @@ class _HomeShellState extends State<HomeShell> {
     'produccion': 'Producción del día',
     'historial': 'Historial / Bitácora',
     'usuarios': 'Usuarios',
+    'configuracion': 'Configuración',
+    'manual': 'Manual de usuario',
   };
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();

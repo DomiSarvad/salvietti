@@ -102,26 +102,18 @@ class _AnalisisFormDialogState extends State<AnalisisFormDialog> {
                 color: p.brixFueraDeRango ? const Color(0xFFDC2626) : Colors.black54),
           ),
           const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _brix,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _deco('Brix diluido'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _ph,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _deco('pH'),
-                ),
-              ),
-            ],
-          ),
+          FilaCampos([
+            TextField(
+              controller: _brix,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _deco('Brix diluido'),
+            ),
+            TextField(
+              controller: _ph,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _deco('pH'),
+            ),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _aspecto,

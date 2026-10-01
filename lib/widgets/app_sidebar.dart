@@ -55,6 +55,9 @@ class AppSidebar extends StatelessWidget {
           usuario.puedeVerHistorial),
       _Item('usuarios', 'Usuarios', Icons.people_outline,
           usuario.puedeVerUsuarios),
+      // Siempre visible, para cualquier rol: es la referencia escrita de
+      // cómo funciona cada parte, no algo que dependa de permisos.
+      _Item('manual', 'Manual de usuario', Icons.menu_book_outlined, true),
     ];
 
     return Container(

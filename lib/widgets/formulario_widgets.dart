@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
+import '../shared/ayuda/tour_ayuda.dart';
 
 /// Marco común de los formularios (estilo del sistema de reclamos, con los
 /// colores de Salvietti): título en mayúsculas con letras espaciadas y "X"
 /// arriba, cuerpo que se desplaza, y un botón ancho con degradado FIJO abajo
 /// (siempre visible aunque el formulario sea largo).
-class ModalFormulario extends StatelessWidget {
+///
+/// [idTour]/[pasosAyuda] son opcionales: si un formulario los pasa, el marco
+/// se encarga solo de mostrar el tour la primera vez que se abre y de poner
+/// el botón "?" al lado de la "X" — el formulario solo define sus propios
+/// `GlobalKey` y su lista de `PasoAyuda`, igual que ya hace cada pantalla
+/// con `BotonAyuda`.
+class ModalFormulario extends StatefulWidget {
   final String titulo;
   final IconData icono;
   final Widget child;
@@ -13,6 +20,8 @@ class ModalFormulario extends StatelessWidget {
   final VoidCallback? onGuardar;
   final bool guardando;
   final double ancho;
+  final String? idTour;
+  final List<PasoAyuda> Function()? pasosAyuda;
   const ModalFormulario({
     super.key,
     required this.titulo,
@@ -22,12 +31,33 @@ class ModalFormulario extends StatelessWidget {
     required this.onGuardar,
     this.guardando = false,
     this.ancho = 520,
+    this.idTour,
+    this.pasosAyuda,
   });
+
+  @override
+  State<ModalFormulario> createState() => _ModalFormularioState();
+}
+
+class _ModalFormularioState extends State<ModalFormulario> {
+  @override
+  void initState() {
+    super.initState();
+    final idTour = widget.idTour;
+    final pasosAyuda = widget.pasosAyuda;
+    if (idTour != null && pasosAyuda != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          TourAyuda.mostrar(context, idTour: idTour, soloSiNoVisto: true, pasos: pasosAyuda());
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final pantalla = MediaQuery.of(context).size;
-    final anchoUtil = (pantalla.width - 32).clamp(280.0, ancho);
+    final anchoUtil = (pantalla.width - 32).clamp(280.0, widget.ancho);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
@@ -52,10 +82,10 @@ class ModalFormulario extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 10, 8, 10),
               child: Row(
                 children: [
-                  Icon(icono, color: AppColors.primario, size: 22),
+                  Icon(widget.icono, color: AppColors.primario, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(titulo.toUpperCase(),
+                    child: Text(widget.titulo.toUpperCase(),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 15,
@@ -63,6 +93,8 @@ class ModalFormulario extends StatelessWidget {
                             letterSpacing: 3,
                             color: AppColors.negro)),
                   ),
+                  if (widget.idTour != null && widget.pasosAyuda != null)
+                    BotonAyuda(idTour: widget.idTour!, pasos: widget.pasosAyuda!),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.black38),
                     onPressed: () => Navigator.pop(context, false),
@@ -74,7 +106,7 @@ class ModalFormulario extends StatelessWidget {
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: child,
+                child: widget.child,
               ),
             ),
             Container(
@@ -84,9 +116,9 @@ class ModalFormulario extends StatelessWidget {
                 border: Border(top: BorderSide(color: Color(0xFFE3E7EB))),
               ),
               child: _BotonDegradado(
-                texto: textoBoton,
-                cargando: guardando,
-                onTap: onGuardar,
+                texto: widget.textoBoton,
+                cargando: widget.guardando,
+                onTap: widget.onGuardar,
               ),
             ),
           ],
@@ -250,6 +282,48 @@ class ValorFormulario extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Fila de 2 o más campos lado a lado (ej. "Peso" / "Ancho" / "Micronaje")
+/// que en pantallas angostas se apilan en columna: repartir el ancho fijo
+/// entre 2-3 `TextField`/`DropdownButtonFormField` deja tan poco espacio a
+/// cada uno que la etiqueta se corta ("Unidades po…", "Anch…", "Micro…").
+/// [anchoMinimo] es cuánto necesita cada campo para entrar cómodo en una fila.
+class FilaCampos extends StatelessWidget {
+  final List<Widget> campos;
+  final double espacio;
+  final double anchoMinimo;
+  const FilaCampos(this.campos, {super.key, this.espacio = 10, this.anchoMinimo = 150});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final anchoDisponiblePorCampo =
+            (constraints.maxWidth - espacio * (campos.length - 1)) / campos.length;
+        if (anchoDisponiblePorCampo >= anchoMinimo) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < campos.length; i++) ...[
+                if (i > 0) SizedBox(width: espacio),
+                Expanded(child: campos[i]),
+              ],
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < campos.length; i++) ...[
+              if (i > 0) SizedBox(height: espacio),
+              campos[i],
+            ],
+          ],
+        );
+      },
     );
   }
 }

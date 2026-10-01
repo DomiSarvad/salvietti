@@ -151,46 +151,38 @@ class _IniciarCorridaDialogState extends State<IniciarCorridaDialog> {
           ],
           TextField(controller: _lote, decoration: _deco('N° de lote (opcional)')),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Autocomplete<ItemInventario>(
-                  displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
-                  optionsBuilder: (t) => svc.buscarItems(t.text),
-                  onSelected: (i) => setState(() => _solvente = i),
-                  fieldViewBuilder: (context, c, foco, _) => TextField(
-                    controller: c,
-                    focusNode: foco,
-                    onChanged: (t) {
-                      if (_solvente != null && t != '${_solvente!.codigo} · ${_solvente!.detalle}') {
-                        _solvente = null;
-                      }
-                    },
-                    decoration: _deco('Solvente (opcional)'),
-                  ),
-                ),
+          FilaCampos([
+            Autocomplete<ItemInventario>(
+              displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
+              optionsBuilder: (t) => svc.buscarItems(t.text),
+              onSelected: (i) => setState(() => _solvente = i),
+              fieldViewBuilder: (context, c, foco, _) => TextField(
+                controller: c,
+                focusNode: foco,
+                onChanged: (t) {
+                  if (_solvente != null && t != '${_solvente!.codigo} · ${_solvente!.detalle}') {
+                    _solvente = null;
+                  }
+                },
+                decoration: _deco('Solvente (opcional)'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Autocomplete<ItemInventario>(
-                  displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
-                  optionsBuilder: (t) => svc.buscarItems(t.text),
-                  onSelected: (i) => setState(() => _tinta = i),
-                  fieldViewBuilder: (context, c, foco, _) => TextField(
-                    controller: c,
-                    focusNode: foco,
-                    onChanged: (t) {
-                      if (_tinta != null && t != '${_tinta!.codigo} · ${_tinta!.detalle}') {
-                        _tinta = null;
-                      }
-                    },
-                    decoration: _deco('Tinta (opcional)'),
-                  ),
-                ),
+            ),
+            Autocomplete<ItemInventario>(
+              displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
+              optionsBuilder: (t) => svc.buscarItems(t.text),
+              onSelected: (i) => setState(() => _tinta = i),
+              fieldViewBuilder: (context, c, foco, _) => TextField(
+                controller: c,
+                focusNode: foco,
+                onChanged: (t) {
+                  if (_tinta != null && t != '${_tinta!.codigo} · ${_tinta!.detalle}') {
+                    _tinta = null;
+                  }
+                },
+                decoration: _deco('Tinta (opcional)'),
               ),
-            ],
-          ),
+            ),
+          ]),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),

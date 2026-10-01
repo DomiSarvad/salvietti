@@ -1,6 +1,5 @@
 import 'package:intl/intl.dart';
 
-final _numFmt = NumberFormat.decimalPattern('es_BO');
 final _fechaFmt = DateFormat('dd/MM/yyyy', 'es_BO');
 final _fechaHoraFmt = DateFormat('dd/MM/yyyy HH:mm', 'es_BO');
 

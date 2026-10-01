@@ -5,6 +5,7 @@ import 'package:toastification/toastification.dart';
 import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/hive_service.dart';
+import 'services/preferencias_service.dart';
 import 'services/supabase_service.dart';
 import 'services/sync_service.dart';
 import 'screens/auth/login_screen.dart';
@@ -38,17 +39,28 @@ class SalviettiApp extends StatelessWidget {
           create: (_) => SyncService()..iniciarMonitoreo(),
           update: (_, auth, sync) => sync!..vincularAuth(auth),
         ),
+        ChangeNotifierProvider(create: (_) => PreferenciasService()),
       ],
       child: ToastificationWrapper(
-        child: MaterialApp(
-          title: 'Salvietti Control',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorSchemeSeed: AppColors.primario,
-            scaffoldBackgroundColor: AppColors.fondo,
+        child: Consumer<PreferenciasService>(
+          builder: (context, prefs, _) => MaterialApp(
+            title: 'Salvietti Control',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              useMaterial3: true,
+              colorSchemeSeed: AppColors.primario,
+              scaffoldBackgroundColor: AppColors.fondo,
+            ),
+            // Tamaño de letra elegido en Configuración: se aplica a toda la
+            // app envolviendo el árbol con un MediaQuery propio, sin tener
+            // que tocar cada pantalla.
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(prefs.escalaTexto)),
+              child: child!,
+            ),
+            home: const _RaizApp(),
           ),
-          home: const _RaizApp(),
         ),
       ),
     );

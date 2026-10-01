@@ -2,17 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/categoria_inv.dart';
 import '../models/existencia_item.dart';
 import '../repositories/inventario_repository.dart';
+import '../services/inventario_pdf_service.dart';
 import '../services/inventario_service.dart';
 import 'balance_screen.dart';
 import '../widgets/conteo_dialog.dart';
 import '../widgets/item_form_dialog.dart';
 import '../widgets/salida_directa_dialog.dart';
 import '../widgets/movimientos_dialog.dart';
+
+String _textoSituacion(SituacionStock s) {
+  switch (s) {
+    case SituacionStock.critico:
+      return 'Crítico';
+    case SituacionStock.bajo:
+      return 'Bajo';
+    case SituacionStock.optimo:
+      return 'Óptimo';
+    case SituacionStock.sinDatos:
+      return 'Sin consumo';
+  }
+}
 
 /// Inventario por almacenes (General, Jarabes, Soplado), ordenado como se
 /// busca en un almacén real: se entra por TIPO de artículo (Tapas,
@@ -36,8 +51,45 @@ class AlmacenesScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoAlmacenChips = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Almacenes',
+    texto: 'Elegís acá con qué almacén trabajar (General, Jarabes, Soplado, Soda '
+        'Cáustica), según a cuáles tenga acceso tu rol.',
+  );
+  final _pasoBuscador = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Buscador',
+    texto: 'Busca en TODO el almacén, no solo en la categoría donde estés. Escribí '
+        '"crítico", "bajo" u "óptimo" para filtrar por ese estado, o varias palabras '
+        'para que coincidan todas.',
+  );
+  final _pasoCategorias = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Categorías',
+    texto: 'Al entrar a una categoría ya se ven TODOS los ítems de ahí y de sus '
+        'subdivisiones — no hace falta seguir entrando una por una.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'almacenes', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoAlmacenChips, _pasoBuscador, _pasoCategorias];
 
   @override
   Widget build(BuildContext context) {
@@ -70,34 +122,28 @@ class _Vista extends StatelessWidget {
       );
     }
 
-    final hijos = svc.hijosDe(svc.categoriaFiltro);
     final items = svc.mostrarTabla ? svc.visibles : const <ExistenciaItem>[];
-    final buscando = svc.busqueda.trim().isNotEmpty;
 
+    // La sección de categorías vive DENTRO de `_Cabecera` (no acá como ítem
+    // aparte del ListView): antes, al ser un ítem más abajo que el propio
+    // `_Cabecera` (ya de por sí alto, con chips de almacén y buscador), un
+    // `ListView` angosto o con poco alto podía no montarla todavía cuando el
+    // tour arrancaba solo al entrar, y ese paso se salteaba en silencio —
+    // el mismo problema que ya se documentó para historiales sin límite,
+    // aplicado acá por error aunque Almacenes no tiene una lista así.
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        _Cabecera(svc: svc),
+        _Cabecera(
+          svc: svc,
+          pasoAlmacenChips: _pasoAlmacenChips,
+          pasoBuscador: _pasoBuscador,
+          pasoCategorias: _pasoCategorias,
+          pasosAyuda: _pasosAyuda,
+        ),
         if (svc.buscandoEnTodoElAlmacen) ...[
           const SizedBox(height: 10),
           _AvisoBusquedaGlobal(svc: svc),
-        ],
-        if (hijos.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [for (final c in hijos) _TarjetaCategoria(svc: svc, cat: c)],
-          ),
-          if (svc.categoriaFiltro != null && !buscando) ...[
-            const SizedBox(height: 10),
-            const Text(
-              'La lista de abajo ya incluye TODOS los ítems de esta sección y sus '
-              'divisiones — no hace falta entrar a cada una. Tocá una tarjeta solo '
-              'para acotar la vista a esa división.',
-              style: TextStyle(fontSize: 12, color: Colors.black54, fontStyle: FontStyle.italic),
-            ),
-          ],
         ],
         const SizedBox(height: 16),
         if (!svc.mostrarTabla)
@@ -153,7 +199,17 @@ class _AvisoBusquedaGlobal extends StatelessWidget {
 
 class _Cabecera extends StatelessWidget {
   final InventarioService svc;
-  const _Cabecera({required this.svc});
+  final PasoAyuda pasoAlmacenChips;
+  final PasoAyuda pasoBuscador;
+  final PasoAyuda pasoCategorias;
+  final List<PasoAyuda> Function() pasosAyuda;
+  const _Cabecera({
+    required this.svc,
+    required this.pasoAlmacenChips,
+    required this.pasoBuscador,
+    required this.pasoCategorias,
+    required this.pasosAyuda,
+  });
 
   Future<void> _nuevo(BuildContext context) async {
     await showDialog<bool>(
@@ -178,10 +234,48 @@ class _Cabecera extends StatelessWidget {
     );
   }
 
+  /// El reporte lleva EXACTAMENTE lo que se ve en la tabla en ese momento:
+  /// el almacén, la categoría abierta, lo escrito en el buscador y el filtro
+  /// "Pedido" — no un listado aparte que haya que volver a filtrar.
+  Future<void> _imprimir(BuildContext context) async {
+    final almacen = svc.almacenes.firstWhere((a) => a.id == svc.almacenId);
+    final usuario = context.read<AuthService>().usuarioActual!;
+    final filas = [
+      for (final e in svc.visibles)
+        FilaReporteInventario(
+          codigo: e.codigo,
+          detalle: e.detalle,
+          ubicacion: svc.textoRutaRelativa(e.categoriaId),
+          cantidadSistema: e.cantidadSistema,
+          unidad: e.unidad,
+          stockMinimo: e.stockMinimo,
+          diasExistencia: e.diasExistencia,
+          estado: _textoSituacion(svc.situacion(e)),
+        ),
+    ];
+    try {
+      final bytes = await InventarioPdfService.reporte(
+        almacenNombre: almacen.nombre,
+        categoriaTexto: svc.categoriaFiltro == null ? null : svc.textoRuta(svc.categoriaFiltro!),
+        busqueda: svc.busqueda,
+        soloPedido: svc.soloPedido,
+        responsable: usuario.nombreCompleto,
+        filas: filas,
+      );
+      if (!context.mounted) return;
+      final mensaje = await InventarioPdfService.guardar(bytes, almacen.nombre);
+      if (!context.mounted) return;
+      mostrarExito(context, mensaje);
+    } catch (_) {
+      if (context.mounted) mostrarError(context, 'No se pudo generar el reporte.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final actual = svc.categoriaFiltro;
     final ruta = actual == null ? const <CategoriaInv>[] : svc.rutaDe(actual);
+    final hijos = svc.hijosDe(actual);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,22 +286,31 @@ class _Cabecera extends StatelessWidget {
               child: Text('Almacenes',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
             ),
-            if (svc.puedeEditar) ...[
+            BotonAyuda(idTour: 'almacenes', pasos: pasosAyuda),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Wrap, no Row: con los tres botones juntos (Balance, Salida directa,
+        // Nuevo ítem) un Row fijo se desborda en una pantalla angosta — el
+        // título "Almacenes" de arriba quedaba con un ancho negativo y el
+        // texto se partía letra por letra. Acá simplemente pasan a la
+        // siguiente línea.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (svc.puedeEditar)
               OutlinedButton.icon(
                 onPressed: () => _balance(context),
                 icon: const Icon(Icons.fact_check_outlined),
                 label: const Text('Balance'),
               ),
-              const SizedBox(width: 8),
-            ],
-            if (svc.puedeSalidaDirecta) ...[
+            if (svc.puedeSalidaDirecta)
               OutlinedButton.icon(
                 onPressed: () => _salidaDirecta(context),
                 icon: const Icon(Icons.local_shipping_outlined),
                 label: const Text('Salida directa'),
               ),
-              const SizedBox(width: 8),
-            ],
             if (svc.puedeCrear)
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
@@ -218,23 +321,25 @@ class _Cabecera extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            for (final a in svc.almacenes)
-              ChoiceChip(
-                label: Text(a.nombre),
-                selected: a.id == svc.almacenId,
-                selectedColor: AppColors.primario,
-                labelStyle: TextStyle(
-                    color: a.id == svc.almacenId ? Colors.white : Colors.black87),
-                onSelected: (_) => svc.seleccionarAlmacen(a.id),
-              ),
-          ],
+        pasoAlmacenChips.envolver(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final a in svc.almacenes)
+                ChoiceChip(
+                  label: Text(a.nombre),
+                  selected: a.id == svc.almacenId,
+                  selectedColor: AppColors.primario,
+                  labelStyle: TextStyle(
+                      color: a.id == svc.almacenId ? Colors.white : Colors.black87),
+                  onSelected: (_) => svc.seleccionarAlmacen(a.id),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 10),
-        Row(
+        pasoBuscador.envolver(Row(
           children: [
             Expanded(
               child: TextField(
@@ -265,8 +370,17 @@ class _Cabecera extends StatelessWidget {
                 onSelected: (_) => svc.alternarVerTodo(),
               ),
             ],
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: svc.mostrarTabla
+                  ? 'Imprimir reporte de lo que se ve acá'
+                  : 'Elegí una categoría o buscá algo para poder imprimir un reporte',
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              color: AppColors.primario,
+              onPressed: svc.mostrarTabla ? () => _imprimir(context) : null,
+            ),
           ],
-        ),
+        )),
         const SizedBox(height: 8),
         // Migas de pan: dónde estoy y cómo volver.
         Wrap(
@@ -285,6 +399,25 @@ class _Cabecera extends StatelessWidget {
             ],
           ],
         ),
+        if (hijos.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          pasoCategorias.envolver(
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [for (final c in hijos) _TarjetaCategoria(svc: svc, cat: c)],
+            ),
+          ),
+          if (actual != null && svc.busqueda.trim().isEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'La lista de abajo ya incluye TODOS los ítems de esta sección y sus '
+              'divisiones — no hace falta entrar a cada una. Tocá una tarjeta solo '
+              'para acotar la vista a esa división.',
+              style: TextStyle(fontSize: 12, color: Colors.black54, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ],
       ],
     );
   }
@@ -487,19 +620,6 @@ class _TablaItems extends StatelessWidget {
         return SemaforoStock.color(EstadoStock.optimo);
       case SituacionStock.sinDatos:
         return Colors.black45;
-    }
-  }
-
-  String _textoSituacion(SituacionStock s) {
-    switch (s) {
-      case SituacionStock.critico:
-        return 'Crítico';
-      case SituacionStock.bajo:
-        return 'Bajo';
-      case SituacionStock.optimo:
-        return 'Óptimo';
-      case SituacionStock.sinDatos:
-        return 'Sin consumo';
     }
   }
 

@@ -5,6 +5,7 @@ import '../../models/datos_empleado.dart';
 import '../../services/auth_service.dart';
 import '../../services/datos_empleado_service.dart';
 import '../../utils/responsive.dart';
+import '../../features/permisos/screens/permisos_screen.dart';
 import '../../widgets/campos_datos_empleado.dart';
 import '../../widgets/dialog_banner.dart';
 import '../../widgets/selector_rol.dart';
@@ -77,6 +78,23 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
   Future<void> _elegirRol() async {
     final r = await elegirRol(context, actual: _rol);
     if (r != null) setState(() => _rol = r);
+  }
+
+  /// Abre "Permisos por rol" ya con este rol elegido — así, al editar o dar
+  /// de alta a alguien, el Gerente puede revisar o ajustar en el momento
+  /// qué puede hacer ese rol, sin ir a buscarlo a otro lado.
+  void _verPermisos() {
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => Scaffold(
+        appBar: AppBar(
+          title: Text('Permisos de ${Rol.etiqueta(_rol!)}'),
+          backgroundColor: AppColors.primario,
+          foregroundColor: Colors.white,
+        ),
+        body: PermisosScreen(rolInicial: _rol),
+      ),
+    ));
   }
 
   Future<void> _guardar() async {
@@ -248,11 +266,27 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
                     ),
                     Padding(
                       padding: const EdgeInsets.only(top: 6, left: 4),
-                      child: Text(
-                        esUnoMismo
-                            ? 'No podés cambiar tu propio rol.'
-                            : 'Los permisos dependen del rol.',
-                        style: const TextStyle(fontSize: 11, color: Colors.black54),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              esUnoMismo
+                                  ? 'No podés cambiar tu propio rol.'
+                                  : 'Los permisos dependen del rol.',
+                              style: const TextStyle(fontSize: 11, color: Colors.black54),
+                            ),
+                          ),
+                          if (_rol != null)
+                            TextButton.icon(
+                              onPressed: _verPermisos,
+                              icon: const Icon(Icons.admin_panel_settings_outlined, size: 16),
+                              label: const Text('Ver permisos', style: TextStyle(fontSize: 12)),
+                              style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                            ),
+                        ],
                       ),
                     ),
                     if (_esEdicion) ...[
@@ -308,13 +342,17 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
               const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                // OverflowBar, no Row: sin un Expanded, "Cancelar" + "Guardar
+                // cambios" no siempre entran en el ancho del diálogo en un
+                // teléfono angosto — se apilan en vertical solo si hace falta.
+                child: OverflowBar(
+                  alignment: MainAxisAlignment.end,
+                  spacing: 8,
+                  overflowSpacing: 8,
                   children: [
                     TextButton(
                         onPressed: _guardando ? null : () => Navigator.pop(context, false),
                         child: const Text('Cancelar')),
-                    const SizedBox(width: 8),
                     FilledButton(
                       style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
                       onPressed: _guardando ? null : _guardar,

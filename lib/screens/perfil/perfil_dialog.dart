@@ -414,13 +414,19 @@ class _PerfilDialogState extends State<PerfilDialog>
     final esPersonales = _tabController.index == 1;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+      // OverflowBar, no Row: "Guardar contraseña" es el texto más largo de
+      // los tres botones posibles y, con "Cancelar" al lado, no siempre
+      // entra en el ancho del diálogo en un teléfono angosto — un Row sin
+      // Expanded se desbordaba (la franja de advertencia de Flutter tapando
+      // los botones). OverflowBar los apila en vertical solo si hace falta.
+      child: OverflowBar(
+        alignment: MainAxisAlignment.end,
+        spacing: 8,
+        overflowSpacing: 8,
         children: [
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancelar')),
-          const SizedBox(width: 8),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
             onPressed:

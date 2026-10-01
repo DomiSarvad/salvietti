@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/soda_modelos.dart';
@@ -27,8 +28,37 @@ class SodaScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoInfo = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Stock vs. entregas',
+    texto: 'El stock que llega de Almacén se ve en "Almacenes", como el de cualquier '
+        'otro almacén. Acá solo se registra a quién se le entrega, para la constancia.',
+  );
+  final _pasoRegistrar = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Registrar entrega',
+    texto: 'Por ser un producto peligroso, cada entrega genera una constancia en PDF.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'soda_caustica', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoInfo, _pasoRegistrar];
 
   Future<void> _registrar(BuildContext context, SodaService svc) => showDialog<bool>(
         context: context,
@@ -68,30 +98,13 @@ class _Vista extends StatelessWidget {
       );
     }
 
+    // El historial de entregas puede crecer mucho: queda como lista
+    // perezosa aparte, después del encabezado (que se construye entero de
+    // entrada para que el tour siempre encuentre sus pasos).
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Soda Cáustica',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-            ),
-            if (svc.puedeCrear)
-              FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                onPressed: () => _registrar(context, svc),
-                icon: const Icon(Icons.add),
-                label: const Text('Registrar entrega'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        const Text(
-            'El stock (lo que llega de Almacén) se ve en "Almacenes"; acá se registra a quién '
-            'se le entrega, para la constancia.',
-            style: TextStyle(fontSize: 12, color: Colors.black54)),
-        const SizedBox(height: 16),
+        _encabezado(context, svc),
         if (svc.entregas.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -101,6 +114,45 @@ class _Vista extends StatelessWidget {
           )
         else
           for (final e in svc.entregas) _TarjetaEntrega(e: e, onPdf: () => _pdf(context, e)),
+      ],
+    );
+  }
+
+  Widget _encabezado(BuildContext context, SodaService svc) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Soda Cáustica',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BotonAyuda(idTour: 'soda_caustica', pasos: _pasosAyuda),
+          ],
+        ),
+        if (svc.puedeCrear) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _pasoRegistrar.envolver(
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                onPressed: () => _registrar(context, svc),
+                icon: const Icon(Icons.add),
+                label: const Text('Registrar entrega'),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 4),
+        _pasoInfo.envolver(
+          const Text(
+              'El stock (lo que llega de Almacén) se ve en "Almacenes"; acá se registra a quién '
+              'se le entrega, para la constancia.',
+              style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }

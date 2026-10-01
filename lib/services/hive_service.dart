@@ -24,6 +24,7 @@ class HiveService {
     await Hive.openBox(HiveBoxes.colaMovimientos);
     await Hive.openBox(HiveBoxes.sesion);
     await Hive.openBox(HiveBoxes.perfilPendiente);
+    await Hive.openBox(HiveBoxes.preferencias);
   }
 
   static Box _boxCatalogo(String tabla) {

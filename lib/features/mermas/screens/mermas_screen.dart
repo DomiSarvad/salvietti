@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../models/mermas_modelos.dart';
 import '../repositories/mermas_repository.dart';
@@ -25,8 +26,42 @@ class MermasScreen extends StatelessWidget {
   }
 }
 
-class _Vista extends StatelessWidget {
+class _Vista extends StatefulWidget {
   const _Vista();
+
+  @override
+  State<_Vista> createState() => _VistaState();
+}
+
+class _VistaState extends State<_Vista> {
+  final _pasoInfo = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'De dónde sale cada merma',
+    texto: 'Soplado, Llenadora y Codificación ya quedan acá solas (se registran en su '
+        'propia corrida). Jarabes, Calidad y Vidrio se cargan a mano con el botón de arriba.',
+  );
+  final _pasoRegistrar = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Registrar merma',
+    texto: 'Para las áreas sin corrida propia: Jarabes, Calidad y Vidrio.',
+  );
+  final _pasoAlerta = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Alertas',
+    texto: 'Se avisa acá cuando algún evento supera el 3 % de lo producido.',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TourAyuda.mostrar(context, idTour: 'mermas', soloSiNoVisto: true, pasos: _pasosAyuda());
+      }
+    });
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [_pasoInfo, _pasoRegistrar, _pasoAlerta];
 
   Future<void> _registrar(BuildContext context, MermasService svc) => showDialog<bool>(
         context: context,
@@ -58,51 +93,13 @@ class _Vista extends StatelessWidget {
 
     final puedeCrear = svc.puedeCrear && svc.areasPermitidas.isNotEmpty;
 
+    // El consolidado puede crecer mucho: queda como lista perezosa aparte,
+    // después del encabezado (que se construye entero de entrada para que
+    // el tour siempre encuentre sus pasos).
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Mermas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-            ),
-            if (puedeCrear)
-              FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                onPressed: () => _registrar(context, svc),
-                icon: const Icon(Icons.add),
-                label: const Text('Registrar merma'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-            'Soplado, Llenadora y Codificación ya quedan acá solas (se registran en su propia '
-            'corrida). Jarabes, Calidad y Vidrio se cargan con el botón de arriba.',
-            style: TextStyle(fontSize: 12, color: Colors.black54)),
-        const SizedBox(height: 16),
-        if (svc.conAlerta.isNotEmpty) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.3))),
-            child: Row(children: [
-              const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${svc.conAlerta.length} evento${svc.conAlerta.length == 1 ? '' : 's'} '
-                  'por encima del 3 % de merma.',
-                  style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
-                ),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 16),
-        ],
+        _encabezado(context, svc, puedeCrear),
         if (svc.consolidado.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
@@ -112,6 +109,68 @@ class _Vista extends StatelessWidget {
           )
         else
           for (final e in svc.consolidado) _TarjetaEvento(e: e),
+      ],
+    );
+  }
+
+  Widget _encabezado(BuildContext context, MermasService svc, bool puedeCrear) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Mermas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BotonAyuda(idTour: 'mermas', pasos: _pasosAyuda),
+          ],
+        ),
+        if (puedeCrear) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _pasoRegistrar.envolver(
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                onPressed: () => _registrar(context, svc),
+                icon: const Icon(Icons.add),
+                label: const Text('Registrar merma'),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        _pasoInfo.envolver(
+          const Text(
+              'Soplado, Llenadora y Codificación ya quedan acá solas (se registran en su propia '
+              'corrida). Jarabes, Calidad y Vidrio se cargan con el botón de arriba.',
+              style: TextStyle(fontSize: 12, color: Colors.black54)),
+        ),
+        const SizedBox(height: 16),
+        if (svc.conAlerta.isNotEmpty) ...[
+          _pasoAlerta.envolver(
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.3))),
+              child: Row(children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${svc.conAlerta.length} evento${svc.conAlerta.length == 1 ? '' : 's'} '
+                    'por encima del 3 % de merma.',
+                    style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
       ],
     );
   }

@@ -164,12 +164,10 @@ class _LineaFormDialogState extends State<LineaFormDialog> {
             if (_presentacion!.esPet) ...[
               const Text('PET', style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: _campoNum(_petPalets, 'Palets')),
-                const SizedBox(width: 10),
-                Expanded(child: _campoNum(_petPaquetesLibres, 'Paquetes libres')),
-                const SizedBox(width: 10),
-                Expanded(child: _campoNum(_petBotellasLibres, 'Botellas libres')),
+              FilaCampos([
+                _campoNum(_petPalets, 'Palets'),
+                _campoNum(_petPaquetesLibres, 'Paquetes libres'),
+                _campoNum(_petBotellasLibres, 'Botellas libres'),
               ]),
             ] else ...[
               const Text('Vidrio', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -179,12 +177,10 @@ class _LineaFormDialogState extends State<LineaFormDialog> {
                   'cajas arma un palet); cajas y botellas libres sí se suman.',
                   style: TextStyle(fontSize: 11, color: Colors.black54)),
               const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: _campoNum(_vidFilas, 'Filas')),
-                const SizedBox(width: 10),
-                Expanded(child: _campoNum(_vidCajasLibres, 'Cajas libres')),
-                const SizedBox(width: 10),
-                Expanded(child: _campoNum(_vidBotellasLibres, 'Botellas libres')),
+              FilaCampos([
+                _campoNum(_vidFilas, 'Filas'),
+                _campoNum(_vidCajasLibres, 'Cajas libres'),
+                _campoNum(_vidBotellasLibres, 'Botellas libres'),
               ]),
             ],
           ],

@@ -119,23 +119,15 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
           const SizedBox(height: 16),
           const Text('Merma', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_botellasDesechadas, 'Botellas desechadas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_rebalse, 'Rebalse')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_botellasDesechadas, 'Botellas desechadas'),
+            _campoNum(_rebalse, 'Rebalse'),
+          ]),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_tapasUsadas, 'Tapas usadas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_tapasDesechadas, 'Tapas desechadas')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_tapasUsadas, 'Tapas usadas'),
+            _campoNum(_tapasDesechadas, 'Tapas desechadas'),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _motivoMerma,

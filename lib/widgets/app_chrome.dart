@@ -61,7 +61,7 @@ class AppTopBar extends StatelessWidget {
                   icono: Icons.settings,
                   color: const Color(0xFFD9534F),
                   tooltip: 'Configuración',
-                  onTap: () => _abrirPerfil(context),
+                  onTap: () => onNavegar('configuracion'),
                 ),
                 const SizedBox(width: 10),
                 PopupMenuButton<String>(

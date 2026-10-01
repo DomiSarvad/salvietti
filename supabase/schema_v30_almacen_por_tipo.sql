@@ -202,6 +202,13 @@ begin
         return;
     end if;
 
+    -- Bloquea el ítem hasta el commit: dos salidas simultáneas del mismo
+    -- ítem/almacén (dos personas cargando un ajuste a la vez) esperan acá
+    -- en vez de leer el mismo v_total y dejar el saldo negativo entre las
+    -- dos. Sin "parent" natural que bloquear (a diferencia de un pedido),
+    -- se bloquea la fila del ítem mismo.
+    perform 1 from public.inv_items where id = p_item for update;
+
     select coalesce(sum(cantidad), 0) into v_total
       from public.inv_movimientos where item_id = p_item and almacen_id = p_almacen;
     if p_cantidad > v_total + 1e-9 then
@@ -274,6 +281,10 @@ begin
     end if;
 
     if v_m.cantidad > 0 then
+        -- El lock del movimiento (arriba) no alcanza: esto revierte una
+        -- ENTRADA revisando el total agregado del ítem, que otra reversión
+        -- (de OTRO movimiento del mismo ítem) podría estar tocando a la vez.
+        perform 1 from public.inv_items where id = v_m.item_id for update;
         select coalesce(sum(cantidad), 0) into v_total
           from public.inv_movimientos where item_id = v_m.item_id and almacen_id = v_m.almacen_id;
         if v_m.cantidad > v_total + 1e-9 then

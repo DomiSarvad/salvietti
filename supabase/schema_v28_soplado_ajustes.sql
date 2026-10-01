@@ -192,6 +192,12 @@ begin
      where id = p_id;
 
     if v_corrida.item_preforma_id is not null and coalesce(p_preformas_usadas, 0) > 0 then
+        -- Bloquea el ítem antes de sumar el stock: sin esto, dos corridas
+        -- terminándose a la vez para la misma preforma podían leer el mismo
+        -- saldo y las dos pasar el chequeo, dejando el saldo negativo entre
+        -- las dos (mismo caso que inv_registrar_movimiento/soda_registrar_
+        -- entrega/inv_registrar_salida_directa, v30/v36/v40).
+        perform 1 from public.inv_items where id = v_corrida.item_preforma_id for update;
         if p_preformas_usadas > (
             select coalesce(sum(cantidad), 0) from public.inv_movimientos
              where item_id = v_corrida.item_preforma_id and almacen_id = 'soplado'

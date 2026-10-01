@@ -169,16 +169,23 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
   }
 
   Future<void> _crearProveedor() async {
-    final p = await _svc.crearProveedor(_textoProveedor);
+    Proveedor? p;
+    try {
+      p = await _svc.crearProveedor(_textoProveedor);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'No se pudo crear el proveedor. Revisá la conexión e intentá de nuevo.');
+      return;
+    }
     if (!mounted) return;
     if (p == null) {
-      setState(() => _error = 'No se pudo crear el proveedor (2 a 80 caracteres).');
+      setState(() => _error = 'El nombre del proveedor debe tener entre 2 y 80 caracteres.');
       return;
     }
     setState(() {
-      if (!_proveedores.any((x) => x.id == p.id)) _proveedores = [..._proveedores, p];
+      if (!_proveedores.any((x) => x.id == p!.id)) _proveedores = [..._proveedores, p!];
       _proveedor = p;
-      _textoProveedor = p.nombre;
+      _textoProveedor = p!.nombre;
       _error = null;
     });
     _sugerirSenasac();
@@ -351,56 +358,68 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                     ),
                   ),
                 sep,
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _texto(_factura, 'N° de factura', max: 40)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _fechaCampo(
-                        'Fecha de recepción',
-                        _fecha,
-                        () => _elegirFecha(
-                          actual: _fecha,
-                          alElegir: (d) => _fecha = d,
-                          hasta: DateTime.now(),
-                        ),
-                      ),
+                FilaCampos([
+                  _texto(_factura, 'N° de factura', max: 40),
+                  _fechaCampo(
+                    'Fecha de recepción',
+                    _fecha,
+                    () => _elegirFecha(
+                      actual: _fecha,
+                      alElegir: (d) => _fecha = d,
+                      hasta: DateTime.now(),
                     ),
-                  ],
-                ),
+                  ),
+                ]),
                 const SizedBox(height: 16),
                 const Text('Cantidades', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                        child: _texto(_cantFactura, 'Según factura / etiqueta',
-                            numerico: true)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _texto(_cantReal, 'Real (pesado)', numerico: true)),
-                    const SizedBox(width: 10),
-                    if (_unidades.length > 1)
-                      SizedBox(
-                        width: 78,
-                        child: DropdownButtonFormField<String>(
+                // Layout a medida: la unidad es un desplegable angosto de ancho
+                // fijo (o una etiqueta corta), no un campo más — forzarlo a
+                // FilaCampos le daría un tercio del ancho por las dudas,
+                // dejando menos lugar del que necesitan los otros dos campos.
+                LayoutBuilder(builder: (context, constraints) {
+                  const anchoUnidad = 78.0;
+                  const espacio = 10.0;
+                  final anchoCampos = (constraints.maxWidth - anchoUnidad - espacio * 2) / 2;
+                  final campoUnidad = _unidades.length > 1
+                      ? DropdownButtonFormField<String>(
                           initialValue: _unidad,
                           decoration: _deco('Unidad'),
                           items: [
                             for (final u in _unidades) DropdownMenuItem(value: u, child: Text(u)),
                           ],
                           onChanged: (v) => setState(() => _unidad = v ?? _unidad),
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(unidadItem,
-                            style: const TextStyle(fontWeight: FontWeight.w700)),
-                      ),
-                  ],
-                ),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(unidadItem,
+                              style: const TextStyle(fontWeight: FontWeight.w700)),
+                        );
+                  if (anchoCampos >= 130) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                            child: _texto(_cantFactura, 'Según factura / etiqueta',
+                                numerico: true)),
+                        const SizedBox(width: espacio),
+                        Expanded(child: _texto(_cantReal, 'Real (pesado)', numerico: true)),
+                        const SizedBox(width: espacio),
+                        SizedBox(width: anchoUnidad, child: campoUnidad),
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _texto(_cantFactura, 'Según factura / etiqueta', numerico: true),
+                      const SizedBox(height: espacio),
+                      _texto(_cantReal, 'Real (pesado)', numerico: true),
+                      const SizedBox(height: espacio),
+                      campoUnidad,
+                    ],
+                  );
+                }),
                 if (dif != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -424,31 +443,23 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                 const SizedBox(height: 8),
                 _texto(_lote, 'N° de lote', max: 40),
                 sep,
-                Row(
-                  children: [
-                    Expanded(
-                      child: _fechaCampo(
-                        'Fabricación',
-                        _fabricacion,
-                        () => _elegirFecha(
-                            actual: _fabricacion,
-                            alElegir: (d) => _fabricacion = d,
-                            hasta: DateTime.now()),
-                        borrar: () => setState(() => _fabricacion = null),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _fechaCampo(
-                        'Vencimiento',
-                        _vencimiento,
-                        () => _elegirFecha(
-                            actual: _vencimiento, alElegir: (d) => _vencimiento = d),
-                        borrar: () => setState(() => _vencimiento = null),
-                      ),
-                    ),
-                  ],
-                ),
+                FilaCampos([
+                  _fechaCampo(
+                    'Fabricación',
+                    _fabricacion,
+                    () => _elegirFecha(
+                        actual: _fabricacion,
+                        alElegir: (d) => _fabricacion = d,
+                        hasta: DateTime.now()),
+                    borrar: () => setState(() => _fabricacion = null),
+                  ),
+                  _fechaCampo(
+                    'Vencimiento',
+                    _vencimiento,
+                    () => _elegirFecha(actual: _vencimiento, alElegir: (d) => _vencimiento = d),
+                    borrar: () => setState(() => _vencimiento = null),
+                  ),
+                ]),
                 sep,
                 _texto(
                   _senasac,
@@ -462,14 +473,10 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                 const SizedBox(height: 16),
                 const Text('Transporte', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _texto(_transportador, 'Transportador', max: 80)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _texto(_precio, 'Precio (Bs)', numerico: true)),
-                  ],
-                ),
+                FilaCampos([
+                  _texto(_transportador, 'Transportador', max: 80),
+                  _texto(_precio, 'Precio (Bs)', numerico: true),
+                ]),
                 const SizedBox(height: 16),
                 const Text('Respaldo', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),

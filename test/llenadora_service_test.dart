@@ -168,6 +168,20 @@ void main() {
           contains('negativa'));
     });
 
+    test('no deja desechar más botellas o tapas de las que se usaron', () async {
+      final s = await _svc('llenadora');
+      expect(
+          await s.finalizarCorrida(_corrida(),
+              const FinalizarCorridaLlenadora(botellasLlenadas: 100, botellasDesechadas: 500)),
+          contains('botellas de las que se llenaron'));
+      expect(
+          await s.finalizarCorrida(
+              _corrida(),
+              const FinalizarCorridaLlenadora(
+                  botellasLlenadas: 100, tapasUsadas: 100, tapasDesechadas: 500)),
+          contains('tapas de las que se usaron'));
+    });
+
     test('exige motivo cuando hay cualquier merma', () async {
       final s = await _svc('llenadora');
       expect(

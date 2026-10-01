@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
+import '../utils/texto.dart';
 
 /// Selector de rol tipo desplegable con buscador: un cuadro de búsqueda arriba
 /// y la lista de roles debajo. Devuelve el id del rol elegido (ej.
@@ -10,15 +11,6 @@ Future<String?> elegirRol(BuildContext context, {String? actual}) {
     builder: (_) => _SelectorRolDialog(actual: actual),
   );
 }
-
-String _sinTildes(String t) => t
-    .toLowerCase()
-    .replaceAll('á', 'a')
-    .replaceAll('é', 'e')
-    .replaceAll('í', 'i')
-    .replaceAll('ó', 'o')
-    .replaceAll('ú', 'u')
-    .replaceAll('ñ', 'n');
 
 class _SelectorRolDialog extends StatefulWidget {
   final String? actual;
@@ -33,9 +25,9 @@ class _SelectorRolDialogState extends State<_SelectorRolDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final q = _sinTildes(_consulta.trim());
+    final q = sinTildes(_consulta.trim());
     final roles =
-        Rol.todos.where((r) => q.isEmpty || _sinTildes(Rol.etiqueta(r)).contains(q)).toList();
+        Rol.todos.where((r) => q.isEmpty || sinTildes(Rol.etiqueta(r)).contains(q)).toList();
     final ancho = (MediaQuery.of(context).size.width - 32).clamp(280.0, 380.0);
 
     return Dialog(

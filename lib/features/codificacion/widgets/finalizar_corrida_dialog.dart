@@ -120,30 +120,20 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
             style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_botellasCodificadas, 'Botellas codificadas')),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: TextField(
-                      controller: _codigoImpreso,
-                      decoration: _deco('Código o fecha impresa (opcional)'))),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_botellasCodificadas, 'Botellas codificadas'),
+            TextField(
+                controller: _codigoImpreso,
+                decoration: _deco('Código o fecha impresa (opcional)')),
+          ]),
           const SizedBox(height: 16),
           const Text('Merma', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _campoNum(_botellasMalTapadas, 'Botellas mal tapadas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_tapasMalTapadas, 'Tapas mal tapadas')),
-              const SizedBox(width: 10),
-              Expanded(child: _campoNum(_impurezas, 'Impurezas')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_botellasMalTapadas, 'Botellas mal tapadas'),
+            _campoNum(_tapasMalTapadas, 'Tapas mal tapadas'),
+            _campoNum(_impurezas, 'Impurezas'),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _motivoMerma,
@@ -154,18 +144,12 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
           const SizedBox(height: 16),
           const Text('Consumo', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                  child: _campoNum(_solventeUsado,
-                      'Solvente usado${c.itemSolventeDetalle == null ? '' : ' (${c.itemSolventeDetalle})'}')),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _campoNum(_tintaUsada,
-                      'Tinta usada${c.itemTintaDetalle == null ? '' : ' (${c.itemTintaDetalle})'}')),
-            ],
-          ),
+          FilaCampos([
+            _campoNum(_solventeUsado,
+                'Solvente usado${c.itemSolventeDetalle == null ? '' : ' (${c.itemSolventeDetalle})'}'),
+            _campoNum(_tintaUsada,
+                'Tinta usada${c.itemTintaDetalle == null ? '' : ' (${c.itemTintaDetalle})'}'),
+          ]),
           const SizedBox(height: 12),
           TextField(
             controller: _obs,

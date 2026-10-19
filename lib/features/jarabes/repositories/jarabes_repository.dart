@@ -1,5 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/realtime.dart';
+
+export '../../../shared/realtime.dart' show Suscripcion, SuscripcionNula;
 import '../models/jarabes_modelos.dart';
 
 /// Acceso a datos de Recetas y producción de Jarabes. Las escrituras pasan
@@ -12,6 +15,10 @@ abstract class JarabesRepository {
   Future<List<RecetaPropuesta>> recetasPendientes();
   Future<List<Preparado>> preparados({int limite = 200});
   Future<List<AvanceSopladoLite>> avanceSoplado();
+
+  /// Avisa cuando cambia algo que muestra la pantalla de Jarabes (sus
+  /// preparados, recetas, o el avance de Soplado), para refrescarla sola.
+  Suscripcion escucharCambios(void Function() onCambio);
 
   Future<int> recetaCrear(int saborId, Map<int, double> items);
 
@@ -54,7 +61,10 @@ class SupabaseJarabesRepository implements JarabesRepository {
     if (busqueda != null && busqueda.trim().isNotEmpty) {
       query = query.ilike('detalle', '%${busqueda.trim()}%');
     }
-    final filas = await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
+    // Sin texto: el catálogo entero, para buscarlo en memoria (CatalogoLocal).
+    final filas = (busqueda == null || busqueda.trim().isEmpty)
+        ? await SupabaseService.todasLasFilas((d, h) => query.order('detalle').range(d, h))
+        : await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) ItemJarabes.fromMap(f)];
   }
 
@@ -100,6 +110,10 @@ class SupabaseJarabesRepository implements JarabesRepository {
         .timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) AvanceSopladoLite.fromMap(f)];
   }
+
+  @override
+  Suscripcion escucharCambios(void Function() onCambio) => escucharTablas(
+      'jarabes_cambios', const ['jarabes_preparados', 'jarabes_recetas', 'soplado_corridas'], onCambio);
 
   Future<T> _rpc<T>(String funcion, Map<String, dynamic> params) async {
     try {

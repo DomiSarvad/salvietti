@@ -1,5 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/realtime.dart';
+
+export '../../../shared/realtime.dart' show Suscripcion;
 import '../../inventario/models/almacen.dart';
 import '../../inventario/models/existencia_item.dart';
 import '../../mermas/models/mermas_modelos.dart';
@@ -23,11 +26,6 @@ abstract class DashboardRepository {
 
   /// Igual que arriba, pero para lo que afecta al resumen de mermas.
   Suscripcion escucharMermas(void Function() onCambio);
-}
-
-/// Una suscripción activa (a Realtime u otra cosa) que se puede cancelar.
-abstract class Suscripcion {
-  void cancelar();
 }
 
 class SupabaseDashboardRepository implements DashboardRepository {
@@ -80,43 +78,19 @@ class SupabaseDashboardRepository implements DashboardRepository {
   }
 
   @override
-  Suscripcion escucharStock(void Function() onCambio) {
-    final canal = _db
-        .channel('dashboard_stock')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'inv_movimientos',
-          callback: (_) => onCambio(),
-        )
-        .subscribe();
-    return _SuscripcionRealtime(canal);
-  }
+  Suscripcion escucharStock(void Function() onCambio) =>
+      escucharTablas('dashboard_stock', const ['inv_movimientos'], onCambio);
 
   @override
-  Suscripcion escucharMermas(void Function() onCambio) {
-    final canal = _db.channel('dashboard_mermas');
-    for (final tabla in [
-      'mermas_registros',
-      'mermas_causas',
-      'llenadora_corridas',
-      'soplado_corridas',
-      'codificacion_corridas',
-    ]) {
-      canal.onPostgresChanges(
-        event: PostgresChangeEvent.all,
-        schema: 'public',
-        table: tabla,
-        callback: (_) => onCambio(),
+  Suscripcion escucharMermas(void Function() onCambio) => escucharTablas(
+        'dashboard_mermas',
+        const [
+          'mermas_registros',
+          'mermas_causas',
+          'llenadora_corridas',
+          'soplado_corridas',
+          'codificacion_corridas',
+        ],
+        onCambio,
       );
-    }
-    return _SuscripcionRealtime(canal.subscribe());
-  }
-}
-
-class _SuscripcionRealtime implements Suscripcion {
-  final RealtimeChannel _canal;
-  const _SuscripcionRealtime(this._canal);
-  @override
-  void cancelar() => SupabaseService.client.removeChannel(_canal);
 }

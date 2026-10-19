@@ -4,21 +4,35 @@ import '../core/constants.dart';
 /// Banner de degradado verde→negro con una "X" para cerrar y espacio para
 /// que el contenido (avatar, ícono) se superponga en su borde inferior —
 /// mismo lenguaje visual en "Mi perfil" y "Nuevo usuario".
+///
+/// La parte del contenido que "cuelga" debajo del degradado ([solape]) está
+/// DENTRO del alto del widget, no afuera: Flutter dibuja lo que sobresale de
+/// un `Stack` con `Clip.none`, pero no le entrega toques. Antes el avatar
+/// sobresalía 40 px por fuera, y el botón de la cámara de "Mi perfil" (abajo
+/// a la derecha del avatar) se veía pero no se podía tocar.
 class DialogBanner extends StatelessWidget {
   final VoidCallback onCerrar;
   final Widget child;
   const DialogBanner({super.key, required this.onCerrar, required this.child});
 
+  static const _altoDegradado = 110.0;
+  static const solape = 40.0;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 110,
+      height: _altoDegradado + solape,
       child: Stack(
-        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          Container(
-            decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: _altoDegradado,
+            child: Container(
+              decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
+            ),
           ),
           Positioned(
             top: 6,
@@ -28,7 +42,7 @@ class DialogBanner extends StatelessWidget {
               onPressed: onCerrar,
             ),
           ),
-          Positioned(bottom: -40, child: child),
+          Positioned(bottom: 0, child: child),
         ],
       ),
     );

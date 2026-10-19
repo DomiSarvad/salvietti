@@ -131,6 +131,49 @@ entrega). Botón "Salida directa" en Almacenes, visible solo en Almacén General
 la tabla ya está agregada). Sin esto las suscripciones de `DashboardRepository.escucharStock`/
 `escucharMermas` quedan abiertas pero nunca reciben nada — hay que correrlo una vez por proyecto de
 Supabase (Realtime se habilita a nivel tabla, no alcanza con las políticas RLS).
+→ v42 (saldos + presencia + tiempo real de Jarabes): (1) **Saldos mantenidos al día**: hasta v41,
+`inv_stock`/`inv_stock_lote` (y por lo tanto `inv_existencia`) sumaban TODO `inv_movimientos` en
+cada lectura — más lento cada año. Ahora un trigger (`trg_inv_movimiento_saldo`) suma/resta cada
+movimiento a `inv_saldos` (ítem+almacén) e `inv_saldos_lote` (lote+almacén) en la misma transacción
+(`on conflict do update set cantidad = cantidad + x`, atómico por fila), y las tres vistas leen de
+ahí con las MISMAS columnas (nada de la app cambia). Se eligió esto en vez de un "cierre semanal":
+siempre al día, sin proceso programado, y una corrección con fecha vieja no obliga a reabrir
+semanas. `inv_movimientos` sigue siendo el historial completo y la fuente de verdad;
+`select public.inv_reconstruir_saldos();` reconstruye los saldos desde cero (se corre sola al
+ejecutar v42, que es re-ejecutable). Índices nuevos para lo que todavía mira el historial pero
+acotado: salidas de los últimos 30 días (consumo) y último conteo por ítem. **Ojo:** volver a correr
+v18/v18b/v25 recrea esas vistas sumando el historial — después hay que volver a correr v42. Las
+funciones que validan stock (`select sum(...) ... where item_id = ...`) se dejaron como estaban:
+filtran por ítem con índice, no crecen con el total. (2) **Presencia**: `app_presencia` +
+`presencia_latido`/`presencia_salir`/`presencia_listar` (ver "Presencia de las áreas" más abajo).
+(3) Agrega `jarabes_preparados`/`jarabes_recetas` a `supabase_realtime`.
+
+### Presencia de las áreas y tiempo real en Jarabes/Soplado
+
+Problema real que lo motivó: si Soplado se queda sin internet y registra que se acabaron las
+botellas, eso queda en su compu (cola offline) y Jarabes, con internet, sigue viendo el avance viejo
+y decide con un dato que ya no es real. Ningún sistema puede mostrar lo que otra compu no subió, pero
+sí puede avisar que existe:
+- `features/presencia/`: cada app manda un latido por minuto (`presencia_latido`, con cuántos
+  registros tiene sin subir); `PresenciaService` vive toda la sesión (provider en `main.dart`, lee
+  `pendientes`/`online` de `SyncService`, y manda un latido extra apenas cambian los pendientes o
+  vuelve la red). "Sin señal" = más de 3 min sin latido, calculado con el reloj del SERVIDOR
+  (`presencia_listar` devuelve `segundos_sin_senal`: los relojes de las compus pueden estar corridos).
+  Se consulta cada minuto, NO por Realtime (un latido por persona por minuto reenviado a todos
+  gastaría la cuota de mensajes de Supabase). Cerrar sesión llama `presencia_salir` para no aparecer
+  "sin señal"; cerrar la app sin cerrar sesión sí aparece así (el texto lo aclara). En `ClienteOffline`,
+  `presencia_latido`/`_salir` están en `_rpcSoloEnLinea` (un latido viejo no sirve, nunca a la cola) y
+  `presencia_listar` en `_rpcLectura`.
+- `AvisoConexionAreas(roles: [...])`: banda ámbar junto a datos de otra área, no ocupa lugar si todo
+  está bien. Puesta en Jarabes (avance de Soplado), Llenadora (Jarabes + Soplado), Codificación
+  (Llenadora) e Inicio (todas). No muestra nada si ESTE dispositivo está sin red (lo que sabe de los
+  demás es viejo; el aviso propio ya está en la barra).
+- **Tiempo real**: Jarabes (`jarabes_preparados`, `jarabes_recetas`, `soplado_corridas`) y Soplado
+  (`soplado_corridas`) se refrescan solos como el Inicio: `escucharCambios` en el repositorio,
+  recarga silenciosa (sin spinner; si falla, se siguen viendo los datos) con debounce de 400 ms.
+  `Suscripcion` y el helper `escucharTablas` se movieron a `lib/shared/realtime.dart` (el Inicio
+  también lo usa); además recarga al RECONECTAR el canal, porque lo que cambió durante un corte no
+  llega por Realtime. Las demás pantallas siguen cargando al entrar.
 
 El **Inicio** (`features/dashboard/`) ya no lee las tablas legacy (`InventarioService.listarTodo`,
 `MovimientoService.listarRecientes`): se migró a datos en vivo de `inv_existencia`/
@@ -427,6 +470,78 @@ Quedó así:
   PERMISOS de los 11 roles que YA EXISTEN (`Rol.todos`), no crea roles nuevos — agregar un rol
   nuevo sigue siendo un cambio de código en ambos lados (`Rol` en `lib/core/constants.dart` y
   `rol_valido()` en SQL), como dice la sección de Roles más abajo.
+
+## Trabajar sin internet (sincronización automática)
+
+Antes, el modo sin conexión solo cubría el inventario legacy (`HiveService`: catálogo
+tapas/preformas/materia prima + cola de `movimientos`); los módulos de `lib/features/` llamaban
+directo a Supabase y sin internet fallaban. Ahora lo cubre una sola pieza para TODOS los módulos,
+sin tocar ningún repositorio: `ClienteOffline` (`lib/services/cliente_offline.dart`), el
+`httpClient` que se le pasa a `Supabase.initialize`.
+- **Lecturas** (GET a `/rest/v1/` y las RPC de solo lectura de `_rpcLectura`): cada respuesta buena
+  se guarda en Hive (`ColaOffline`, caja `box_cache_lecturas`, por usuario = `sub` del JWT). Sin
+  internet se devuelve esa copia; si la red tarda más de 5 s y hay copia, también.
+- **Escrituras** (insert/update/delete y RPC): sin internet se encolan en `box_cola_offline` (sin el
+  token) y a la app se le contesta como si hubieran salido bien. Si la RPC/insert "crea" algo, se
+  devuelve un id provisorio negativo (`-9xxxxxxxxxxx`); al subir se anota el real
+  (`box_ids_temporales`) y se reemplaza en todo lo que venga después (ej. finalizar una corrida
+  iniciada sin internet). Con algo pendiente de esa persona, lo nuevo también va a la cola, para
+  respetar el orden.
+- **Subida**: `SyncService` la dispara al volver la conexión, al abrir la app y cada 30 s mientras
+  haya pendientes (connectivity_plus no avisa cuando vuelve el wifi sin salida a internet). Sube
+  FIFO solo lo del usuario con sesión abierta (lo de otro usuario espera a que vuelva a entrar en esa
+  compu, para que quede a su nombre). Las reglas del servidor (stock, permisos) se aplican al
+  subir: si el servidor rechaza algo, pasa a `box_errores_offline` y se ve en Configuración →
+  Sincronización con su motivo, para Reintentar o Descartar; lo que dependía de eso (id provisorio
+  sin resolver) también queda con error.
+- **No se encola** (pasa directo y falla como antes): login e intentos, alta/edición de usuarios,
+  `permisos_rol`, la clave del Gerente (`jarabes_receta_confirmar_gerente`), la tabla legacy
+  `movimientos` y el bucket `avatars` (tienen su propio mecanismo). Tampoco si la conexión se cortó
+  DESPUÉS de mandar el pedido (`_ambigua`: "connection closed", timeout): pudo haber llegado y
+  encolarlo podría duplicarlo; en la subida, ese caso queda "con error" para que una persona revise.
+- Aviso global (`AvisoSincronizacion`, envuelve la app en `main.dart`): "Sin internet: se guardó en
+  esta compu" en cada escritura encolada, y cuántas se subieron/rechazaron al volver la conexión.
+- **Limitaciones conocidas**: lo hecho sin internet no aparece en las listas hasta que se sube y se
+  recarga la pantalla (las lecturas son la copia de la última vez); una consulta que nunca se hizo
+  con conexión en esa compu no tiene copia; el login requiere internet (una sesión ya abierta sigue
+  funcionando). Una RPC nueva de solo lectura hay que sumarla a `_rpcLectura`, y una que deba exigir
+  conexión a `_rpcSoloEnLinea` — si no, se trata como escritura y se encola.
+- Test: `test/cliente_offline_test.dart` (cliente HTTP falso, sin red real).
+
+## Rendimiento (búsquedas y listas, 2026-10-15)
+
+- **Buscadores de los formularios** (elegir insumo/tapa/preforma/proveedor al iniciar una corrida,
+  Soda Cáustica, Solicitudes): antes cada letra era una consulta `ilike` al servidor (una ida y
+  vuelta por red por tecla). Ahora el service usa `CatalogoLocal` (`lib/shared/busqueda_local.dart`):
+  trae el catálogo UNA vez (`SupabaseService.todasLasFilas`, pagina de a 1000 porque Supabase corta
+  ahí), lo guarda 5 min y filtra en memoria con `IndiceBusqueda` (texto sin tildes precalculado,
+  todas las palabras en cualquier orden, busca también por código, primero lo que empieza con lo
+  escrito, máximo 30). Los repositorios mantienen la firma `({String? busqueda})`: sin texto devuelven
+  el catálogo entero, con texto siguen funcionando como antes. Un buscador nuevo de este tipo va con
+  `CatalogoLocal`, nunca con una consulta por letra.
+- Los formularios que ya filtraban en memoria (Pedido, Recepción, Proponer receta) usan
+  `IndiceBusqueda` (antes quitaban tildes a todo el catálogo y dibujaban todas las opciones, sin
+  límite, a cada letra). "Proponer receta" cargaba el catálogo con `buscarItems('')`, que el servidor
+  cortaba en 30 ítems — ahora usa `JarabesService.catalogoItems()` (todo).
+- **Almacenes** (`InventarioService`): índices armados una vez por carga (`_asegurarIndices`:
+  categoría por id, hijos por padre, descendientes, rutas, resúmenes de tarjetas, texto de búsqueda
+  por ítem con `Expando`) en vez de búsquedas lineales por cada fila/tarjeta en cada dibujado;
+  `visibles` memoizado por filtros; `buscar` aplica el filtro al toque pero redibuja recién tras
+  200 ms sin escribir; la tabla se dibuja de a 100 filas (`limiteTabla`, botón "Mostrar más") — el
+  PDF sigue usando `visibles` completo. Balance memoiza su filtro igual (cada número escrito
+  redibujaba y volvía a filtrar todo).
+- `ClienteOffline` guarda la copia de cada lectura en segundo plano (`unawaited`), sin demorar la
+  respuesta. Recepciones carga recepciones y reclamos en paralelo.
+- Test: `test/busqueda_local_test.dart`.
+
+## Respaldos
+
+`.github/workflows/backup.yml` (GitHub Actions): `pg_dump` diario de `public`/`auth`/`storage`
+(03:00 Bolivia) + fotos de Storage los domingos (`scripts/backup/descargar_storage.mjs`, sin
+dependencias), todo cifrado con `openssl` (secreto `BACKUP_PASSWORD`) y guardado 30 días como
+artifact. Usa el **Session pooler** de Supabase (GitHub no tiene IPv6 para la conexión directa).
+Configuración, restauración y la recomendación de plan Pro para producción: `docs/backups.md`.
+Si se agrega un schema propio fuera de `public`, sumarlo al `pg_dump`.
 
 ## Ayuda dentro de la app (tours guiados)
 

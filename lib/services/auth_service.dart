@@ -375,6 +375,12 @@ class AuthService extends ChangeNotifier {
         accion: 'logout',
       );
     }
+    // Que las demás áreas no lo vean como "sin señal": cerró a propósito.
+    try {
+      await SupabaseService.client.rpc('presencia_salir').timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Sin internet o sin v42: no impide cerrar la sesión.
+    }
     await SupabaseService.client.auth.signOut();
     _usuarioActual = null;
     _datosPendientes = false;

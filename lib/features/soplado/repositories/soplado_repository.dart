@@ -1,5 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/realtime.dart';
+
+export '../../../shared/realtime.dart' show Suscripcion, SuscripcionNula;
 import '../models/soplado_modelos.dart';
 
 /// Acceso a datos de Soplado. Las escrituras pasan por funciones del
@@ -15,6 +18,10 @@ abstract class SopladoRepository {
   Future<List<Proveedor>> proveedores({String? busqueda});
   Future<List<CorridaSoplado>> corridas({int limite = 200});
   Future<List<AvanceSoplado>> avance();
+
+  /// Avisa cuando cambia una corrida (de cualquier persona), para refrescar
+  /// la pantalla sola.
+  Suscripcion escucharCambios(void Function() onCambio);
 
   Future<int> iniciarCorrida({
     required int saborId,
@@ -67,7 +74,10 @@ class SupabaseSopladoRepository implements SopladoRepository {
     if (busqueda != null && busqueda.trim().isNotEmpty) {
       query = query.ilike('detalle', '%${busqueda.trim()}%');
     }
-    final filas = await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
+    // Sin texto: el catálogo entero, para buscarlo en memoria (CatalogoLocal).
+    final filas = (busqueda == null || busqueda.trim().isEmpty)
+        ? await SupabaseService.todasLasFilas((d, h) => query.order('detalle').range(d, h))
+        : await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) ItemPreforma.fromMap(f)];
   }
 
@@ -77,7 +87,10 @@ class SupabaseSopladoRepository implements SopladoRepository {
     if (busqueda != null && busqueda.trim().isNotEmpty) {
       query = query.ilike('nombre', '%${busqueda.trim()}%');
     }
-    final filas = await query.order('nombre').limit(30).timeout(SupabaseService.timeoutRed);
+    // Sin texto: el catálogo entero, para buscarlo en memoria (CatalogoLocal).
+    final filas = (busqueda == null || busqueda.trim().isEmpty)
+        ? await SupabaseService.todasLasFilas((d, h) => query.order('nombre').range(d, h))
+        : await query.order('nombre').limit(30).timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) Proveedor.fromMap(f)];
   }
 
@@ -102,6 +115,10 @@ class SupabaseSopladoRepository implements SopladoRepository {
         .timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) AvanceSoplado.fromMap(f)];
   }
+
+  @override
+  Suscripcion escucharCambios(void Function() onCambio) =>
+      escucharTablas('soplado_cambios', const ['soplado_corridas'], onCambio);
 
   Future<T> _rpc<T>(String funcion, Map<String, dynamic> params) async {
     try {

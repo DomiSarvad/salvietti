@@ -182,6 +182,11 @@ class HiveBoxes {
   static const sesion = 'box_sesion';
   static const perfilPendiente = 'box_perfil_pendiente'; // foto sin subir
   static const preferencias = 'box_preferencias'; // ej. tours de ayuda ya vistos
+  // Modo sin conexión de los módulos nuevos (ver ColaOffline/ClienteOffline).
+  static const cacheLecturas = 'box_cache_lecturas';
+  static const colaOffline = 'box_cola_offline';
+  static const erroresOffline = 'box_errores_offline';
+  static const idsTemporales = 'box_ids_temporales';
 }
 
 class AppColors {

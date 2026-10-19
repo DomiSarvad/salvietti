@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
+import '../../presencia/widgets/aviso_conexion_areas.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
@@ -120,6 +121,11 @@ class _VistaState extends State<_Vista> {
             BotonAyuda(idTour: 'llenadora', pasos: _pasosAyuda),
           ],
         ),
+        // Llenadora usa los preparados de Jarabes y las botellas de Soplado:
+        // si alguna de esas áreas está sin internet, avisa.
+        const AvisoConexionAreas(
+            roles: [Rol.jarabes, Rol.ayudanteJarabes, Rol.soplado],
+            margen: EdgeInsets.only(top: 10)),
         if (svc.puedeCrear) ...[
           const SizedBox(height: 8),
           Align(

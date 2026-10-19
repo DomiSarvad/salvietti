@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:toastification/toastification.dart';
 import 'core/constants.dart';
+import 'features/presencia/repositories/presencia_repository.dart';
+import 'features/presencia/services/presencia_service.dart';
 import 'services/auth_service.dart';
 import 'services/hive_service.dart';
 import 'services/preferencias_service.dart';
@@ -11,6 +13,7 @@ import 'services/sync_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/perfil/completar_datos_screen.dart';
+import 'widgets/aviso_sincronizacion.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 Future<void> main() async {
@@ -40,6 +43,21 @@ class SalviettiApp extends StatelessWidget {
           update: (_, auth, sync) => sync!..vincularAuth(auth),
         ),
         ChangeNotifierProvider(create: (_) => PreferenciasService()),
+        // Presencia de las áreas (quién está sin internet): vive toda la
+        // sesión, avisa cada minuto y lee el estado de las demás.
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (ctx) {
+            final sync = ctx.read<SyncService>();
+            return PresenciaService(
+              SupabasePresenciaRepository(),
+              pendientes: () => sync.pendientes,
+              usuarioActual: () => SupabaseService.currentUser?.id,
+              hayRed: () => sync.online,
+              cambios: sync,
+            )..iniciar();
+          },
+        ),
       ],
       child: ToastificationWrapper(
         child: Consumer<PreferenciasService>(
@@ -57,7 +75,8 @@ class SalviettiApp extends StatelessWidget {
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context)
                   .copyWith(textScaler: TextScaler.linear(prefs.escalaTexto)),
-              child: child!,
+              // Avisos de "guardado sin internet" / "se subió lo pendiente".
+              child: AvisoSincronizacion(child: child!),
             ),
             home: const _RaizApp(),
           ),

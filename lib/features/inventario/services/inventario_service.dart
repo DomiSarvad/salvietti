@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../core/constants.dart';
 import '../../../core/modulos.dart';
@@ -51,6 +52,68 @@ class InventarioService extends ChangeNotifier {
   bool cargando = true;
   String? error;
 
+  /// Filas de la tabla que se dibujan (una tabla con cientos de filas se
+  /// arma entera de nuevo a cada cambio y hacía lenta toda la pantalla). El
+  /// PDF y los contadores usan siempre [visibles] completo.
+  static const filasPorTanda = 100;
+  int limiteTabla = filasPorTanda;
+
+  void mostrarMasFilas() {
+    limiteTabla += filasPorTanda;
+    notifyListeners();
+  }
+
+  Timer? _redibujarBusqueda;
+
+  @override
+  void dispose() {
+    _redibujarBusqueda?.cancel();
+    super.dispose();
+  }
+
+  // ------------------------------------------------------------- índices
+  //
+  // Se arman una vez por carga (no a cada letra ni por cada fila dibujada):
+  // categoría por id, hijos por padre, descendientes, rutas, resumen de cada
+  // tarjeta y el texto de búsqueda (sin tildes) de cada ítem. Se reconstruyen
+  // solos si cambian las listas `categorias`/`existencias`.
+
+  List<CategoriaInv>? _catsIndexadas;
+  List<ExistenciaItem>? _existIndexadas;
+  Map<int, CategoriaInv> _porId = {};
+  Map<int?, List<CategoriaInv>> _hijosPorPadre = {};
+  final Map<int, Set<int>> _descendientes = {};
+  final Map<int, List<CategoriaInv>> _rutas = {};
+  final Map<int, ResumenCategoria> _resumenes = {};
+  final _textoBusqueda = Expando<String>();
+
+  void _asegurarIndices() {
+    if (!identical(_catsIndexadas, categorias)) {
+      _catsIndexadas = categorias;
+      _porId = {for (final c in categorias) c.id: c};
+      _hijosPorPadre = {};
+      for (final c in categorias) {
+        (_hijosPorPadre[c.padreId] ??= []).add(c);
+      }
+      _descendientes.clear();
+      _rutas.clear();
+      _resumenes.clear();
+      _visiblesMemo = null;
+    }
+    if (!identical(_existIndexadas, existencias)) {
+      _existIndexadas = existencias;
+      _resumenes.clear();
+      _visiblesMemo = null;
+    }
+  }
+
+  String _textoDe(ExistenciaItem e) =>
+      _textoBusqueda[e] ??= '${sinTildes(e.detalle)} ${sinTildes(e.codigo)}';
+
+  // Último resultado de [visibles] y con qué filtros se calculó.
+  List<ExistenciaItem>? _visiblesMemo;
+  Object? _visiblesClave;
+
   // ---------------------------------------------------------------- permisos
 
   bool _puede(String accion, [String? almacen]) => _usuario.puede(
@@ -93,6 +156,7 @@ class InventarioService extends ChangeNotifier {
 
   Future<void> seleccionarAlmacen(String id) async {
     if (id == almacenId) return;
+    limiteTabla = filasPorTanda;
     cargando = true;
     notifyListeners();
     try {
@@ -132,10 +196,8 @@ class InventarioService extends ChangeNotifier {
       categorias.where((c) => c.almacenId == almacenId).toList();
 
   CategoriaInv? _categoriaPorId(int id) {
-    for (final c in categorias) {
-      if (c.id == id) return c;
-    }
-    return null;
+    _asegurarIndices();
+    return _porId[id];
   }
 
   /// Propias (siempre, aunque estén vacías, para poder navegarlas y crear el
@@ -162,23 +224,31 @@ class InventarioService extends ChangeNotifier {
 
   // ---------------------------------------------------------------- filtros
 
+  /// La búsqueda se aplica al toque ([visibles] ya la usa), pero la pantalla
+  /// se redibuja recién cuando se deja de escribir un momento: redibujar la
+  /// tabla a cada letra era lo que hacía sentir lento el buscador.
   void buscar(String texto) {
     busqueda = texto;
-    notifyListeners();
+    limiteTabla = filasPorTanda;
+    _redibujarBusqueda?.cancel();
+    _redibujarBusqueda = Timer(const Duration(milliseconds: 200), notifyListeners);
   }
 
   void filtrarCategoria(int? id) {
     categoriaFiltro = id;
+    limiteTabla = filasPorTanda;
     notifyListeners();
   }
 
   void alternarSoloPedido() {
     soloPedido = !soloPedido;
+    limiteTabla = filasPorTanda;
     notifyListeners();
   }
 
   void alternarVerTodo() {
     verTodo = !verTodo;
+    limiteTabla = filasPorTanda;
     notifyListeners();
   }
 
@@ -187,21 +257,28 @@ class InventarioService extends ChangeNotifier {
   bool get mostrarTabla =>
       categoriaFiltro != null || busqueda.trim().isNotEmpty || soloPedido || verTodo;
 
-  List<CategoriaInv> hijosDe(int? padreId) => categorias
-      .where((c) => c.padreId == padreId && _relevantes.contains(c.id))
-      .toList();
+  List<CategoriaInv> hijosDe(int? padreId) {
+    _asegurarIndices();
+    return [
+      for (final c in _hijosPorPadre[padreId] ?? const <CategoriaInv>[])
+        if (_relevantes.contains(c.id)) c
+    ];
+  }
 
   /// Camino desde la raíz hasta [id]: [PET, Tapas, Tapa Short].
   List<CategoriaInv> rutaDe(int id) {
-    final ruta = <CategoriaInv>[];
-    int? actual = id;
-    while (actual != null) {
-      final c = categorias.where((c) => c.id == actual).firstOrNull;
-      if (c == null) break;
-      ruta.insert(0, c);
-      actual = c.padreId;
-    }
-    return ruta;
+    _asegurarIndices();
+    return _rutas[id] ??= () {
+      final ruta = <CategoriaInv>[];
+      int? actual = id;
+      while (actual != null) {
+        final c = _porId[actual];
+        if (c == null || ruta.contains(c)) break;
+        ruta.insert(0, c);
+        actual = c.padreId;
+      }
+      return List<CategoriaInv>.unmodifiable(ruta);
+    }();
   }
 
   String textoRuta(int categoriaId) =>
@@ -219,29 +296,35 @@ class InventarioService extends ChangeNotifier {
 
   /// Ítems, pedidos y críticos de una categoría y todo lo que cuelga de ella.
   ResumenCategoria resumenDe(int categoriaId) {
-    final ids = _idsConDescendientes(categoriaId);
-    var items = 0, pedidos = 0, criticos = 0;
-    for (final e in existencias) {
-      if (!ids.contains(e.categoriaId)) continue;
-      items++;
-      if (necesitaPedido(e)) pedidos++;
-      if (situacion(e) == SituacionStock.critico) criticos++;
-    }
-    return ResumenCategoria(items: items, pedidos: pedidos, criticos: criticos);
+    _asegurarIndices();
+    return _resumenes[categoriaId] ??= () {
+      final ids = _idsConDescendientes(categoriaId);
+      var items = 0, pedidos = 0, criticos = 0;
+      for (final e in existencias) {
+        if (!ids.contains(e.categoriaId)) continue;
+        items++;
+        if (necesitaPedido(e)) pedidos++;
+        if (situacion(e) == SituacionStock.critico) criticos++;
+      }
+      return ResumenCategoria(items: items, pedidos: pedidos, criticos: criticos);
+    }();
   }
 
   Set<int> _idsConDescendientes(int id) {
-    final ids = {id};
-    var pendientes = [id];
-    while (pendientes.isNotEmpty) {
-      final hijos = categorias
-          .where((c) => c.padreId != null && pendientes.contains(c.padreId))
-          .map((c) => c.id)
-          .toList();
-      ids.addAll(hijos);
-      pendientes = hijos;
-    }
-    return ids;
+    _asegurarIndices();
+    return _descendientes[id] ??= () {
+      final ids = {id};
+      var pendientes = [id];
+      while (pendientes.isNotEmpty) {
+        final hijos = [
+          for (final p in pendientes)
+            for (final c in _hijosPorPadre[p] ?? const <CategoriaInv>[])
+              if (ids.add(c.id)) c.id
+        ];
+        pendientes = hijos;
+      }
+      return ids;
+    }();
   }
 
   /// Palabras de la búsqueda actual (sin tildes, minúsculas), para exigir
@@ -257,18 +340,28 @@ class InventarioService extends ChangeNotifier {
   bool get buscandoEnTodoElAlmacen => categoriaFiltro != null && _palabrasBusqueda.isNotEmpty;
 
   /// Ítems que pasan la categoría, la búsqueda y el filtro "Pedido".
+  ///
+  /// La pantalla lo pide varias veces por dibujado (tabla, contadores, PDF):
+  /// se calcula una sola vez por combinación de filtros.
   List<ExistenciaItem> get visibles {
+    _asegurarIndices();
+    final clave = (busqueda.trim(), categoriaFiltro, soloPedido);
+    final memo = _visiblesMemo;
+    if (memo != null && _visiblesClave == clave) return memo;
+
     final palabras = _palabrasBusqueda;
     final ids = (categoriaFiltro != null && palabras.isEmpty)
         ? _idsConDescendientes(categoriaFiltro!)
         : null;
-    return existencias.where((e) {
+    final resultado = List<ExistenciaItem>.unmodifiable(existencias.where((e) {
       if (ids != null && !ids.contains(e.categoriaId)) return false;
       if (soloPedido && !necesitaPedido(e)) return false;
       if (palabras.isEmpty) return true;
-      final texto = '${sinTildes(e.detalle)} ${sinTildes(e.codigo)}';
-      return palabras.every((p) => texto.contains(p));
-    }).toList();
+      final texto = _textoDe(e);
+      return palabras.every(texto.contains);
+    }));
+    _visiblesClave = clave;
+    return _visiblesMemo = resultado;
   }
 
   // --------------------------------------------------------------- semáforo

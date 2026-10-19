@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
+import '../../services/cola_offline.dart';
 import '../../services/preferencias_service.dart';
 import '../../services/sync_service.dart';
 import '../../shared/ayuda/tour_ayuda.dart';
+import '../../utils/formatters.dart';
 import '../../utils/notificaciones.dart';
 
 /// Configuración general de la app — cosas del dispositivo/la sesión, no
@@ -53,9 +55,10 @@ class ConfiguracionScreen extends StatelessWidget {
                 Expanded(
                   child: Text(
                     !sync.online
-                        ? 'Sin conexión.'
+                        ? 'Sin conexión. Podés seguir trabajando: lo que registres se guarda '
+                            'en esta compu${sync.pendientes > 0 ? ' (${sync.pendientes} sin subir)' : ''}.'
                         : (sync.pendientes > 0
-                            ? '${sync.pendientes} movimiento${sync.pendientes == 1 ? '' : 's'} sin subir todavía.'
+                            ? '${sync.pendientes} registro${sync.pendientes == 1 ? '' : 's'} sin subir todavía.'
                             : 'Todo sincronizado.'),
                     style: const TextStyle(fontSize: 13),
                   ),
@@ -64,7 +67,9 @@ class ConfiguracionScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: sync.sincronizando || sync.pendientes == 0 || !sync.online
+              // Habilitado aunque figure "sin conexión": si la red ya volvió,
+              // intentar es la forma de enterarse.
+              onPressed: sync.sincronizando || sync.pendientes == 0
                   ? null
                   : () => _sincronizarAhora(context, sync),
               icon: sync.sincronizando
@@ -77,6 +82,7 @@ class ConfiguracionScreen extends StatelessWidget {
             const Text(
                 'Lo pendiente se sube solo al recuperar conexión; este botón lo fuerza ahora.',
                 style: TextStyle(fontSize: 11, color: Colors.black54)),
+            _ListaPendientes(sync: sync),
           ],
         ),
         const SizedBox(height: 16),
@@ -121,6 +127,88 @@ class ConfiguracionScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 11, color: Colors.black54)),
           ],
         ),
+      ],
+    );
+  }
+}
+
+/// Lo guardado sin internet que todavía no subió, y lo que el servidor
+/// rechazó al subirlo (ej. ya no alcanzaba el stock), con su motivo.
+class _ListaPendientes extends StatelessWidget {
+  final SyncService sync;
+  const _ListaPendientes({required this.sync});
+
+  Future<void> _descartar(BuildContext context, OperacionOffline op) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Descartar este registro?'),
+        content: Text('"${op.descripcion}" no se va a subir nunca. Si hace falta, '
+            'habrá que cargarlo de nuevo a mano.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Descartar')),
+        ],
+      ),
+    );
+    if (ok == true) await sync.descartar(op);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pendientes = sync.operacionesPendientes;
+    final errores = sync.operacionesConError;
+    if (pendientes.isEmpty && errores.isEmpty) return const SizedBox.shrink();
+    const chico = TextStyle(fontSize: 11, color: Colors.black54);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (errores.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text('No aceptados por el servidor',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFDC2626))),
+          const Text(
+              'Se hicieron sin internet y al subirlos ya no correspondían. Reintentá si '
+              'lo arreglaste (ej. ya entró el stock), o descartalos y cargalos de nuevo.',
+              style: chico),
+          for (final op in errores)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+              title: Text(op.descripcion, style: const TextStyle(fontSize: 13)),
+              subtitle: Text('${fmtFechaHora(op.creadoEn)} · ${op.error ?? ''}', style: chico),
+              trailing: Wrap(children: [
+                IconButton(
+                    tooltip: 'Reintentar',
+                    icon: const Icon(Icons.refresh, size: 20),
+                    onPressed: () => sync.reintentar(op)),
+                IconButton(
+                    tooltip: 'Descartar',
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: () => _descartar(context, op)),
+              ]),
+            ),
+        ],
+        if (pendientes.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          const Text('Guardados en esta compu, sin subir',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+          for (final op in pendientes)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.schedule, size: 20, color: Color(0xFFD97706)),
+              title: Text(op.descripcion, style: const TextStyle(fontSize: 13)),
+              subtitle: Text(
+                  sync.esDeOtroUsuario(op)
+                      ? '${fmtFechaHora(op.creadoEn)} · de otro usuario: se sube cuando esa '
+                          'persona vuelva a iniciar sesión en esta compu'
+                      : fmtFechaHora(op.creadoEn),
+                  style: chico),
+            ),
+        ],
       ],
     );
   }

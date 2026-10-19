@@ -16,6 +16,7 @@ import '../../utils/responsive.dart';
 import '../../utils/notificaciones.dart';
 import '../../widgets/campos_datos_empleado.dart';
 import '../../widgets/dialog_banner.dart';
+import '../../shared/visor_foto.dart';
 
 /// La cámara solo tiene sentido en móvil: en escritorio/web `image_picker`
 /// no la soporta y siempre conviene ir directo al selector de archivos.
@@ -292,7 +293,7 @@ class _PerfilDialogState extends State<PerfilDialog>
                 onEditar: () => _cambiarFoto(usuario),
               ),
             ),
-            const SizedBox(height: 46),
+            const SizedBox(height: 6),
             DialogRibbon(texto: usuario.nombreCompleto),
             if (fotoPendiente != null) ...[
               const SizedBox(height: 8),
@@ -467,25 +468,52 @@ class _AvatarConEditor extends StatelessWidget {
     required this.onEditar,
   });
 
+  /// La foto que se está mostrando: la guardada sin internet tiene prioridad.
+  ImageProvider? get _imagen => fotoPendiente != null
+      ? MemoryImage(fotoPendiente!) as ImageProvider
+      : (avatarUrl != null ? NetworkImage(avatarUrl!) : null);
+
+  static const _tagFoto = 'foto_perfil';
+
   @override
   Widget build(BuildContext context) {
+    final imagen = _imagen;
+    final circulo = Container(
+      padding: const EdgeInsets.all(4),
+      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+      child: Hero(
+        tag: _tagFoto,
+        child: CircleAvatar(
+          radius: radio,
+          backgroundColor: AppColors.primario.withOpacity(0.1),
+          backgroundImage: imagen,
+          child: imagen == null
+              ? Text(inicial.isNotEmpty ? inicial[0].toUpperCase() : '?',
+                  style: TextStyle(fontSize: radio * 0.7, color: AppColors.primario))
+              : null,
+        ),
+      ),
+    );
+
     return Stack(
       children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-          child: CircleAvatar(
-            radius: radio,
-            backgroundColor: AppColors.primario.withOpacity(0.1),
-            backgroundImage: fotoPendiente != null
-                ? MemoryImage(fotoPendiente!) as ImageProvider
-                : (avatarUrl != null ? NetworkImage(avatarUrl!) : null),
-            child: fotoPendiente == null && avatarUrl == null
-                ? Text(inicial.isNotEmpty ? inicial[0].toUpperCase() : '?',
-                    style: TextStyle(fontSize: radio * 0.7, color: AppColors.primario))
-                : null,
+        // Con foto: tocarla la abre agrandada (como en una cuenta de
+        // Google). Sin foto no hay nada que agrandar; para elegir una está
+        // el botón de la cámara.
+        if (imagen == null)
+          circulo
+        else
+          Tooltip(
+            message: 'Ver foto',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.zoomIn,
+              child: GestureDetector(
+                onTap: () => mostrarFotoAmpliada(context,
+                    imagen: imagen, titulo: inicial, tag: _tagFoto),
+                child: circulo,
+              ),
+            ),
           ),
-        ),
         Positioned(
           right: 0,
           bottom: 0,

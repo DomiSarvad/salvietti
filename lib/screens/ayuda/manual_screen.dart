@@ -205,7 +205,17 @@ const _entradas = <_EntradaManual>[
     icono: Icons.settings,
     resumen: 'El engranaje de arriba: ajustes del dispositivo, no de tu cuenta.',
     puntos: [
-      'Sincronización: ver si hay movimientos sin subir y forzar "Sincronizar ahora".',
+      'Sin internet se puede seguir trabajando: lo que registres se guarda en esta compu '
+          '(aparece el aviso "Sin internet: se guardó en esta compu") y se sube solo cuando '
+          'vuelve la conexión. Lo que ves en pantalla mientras tanto es lo de la última vez '
+          'que hubo internet.',
+      'Si otra área está sin internet, aparece un aviso amarillo (por ejemplo, en Jarabes: '
+          '"Soplado: sin señal desde las 10:32"). Quiere decir que lo que esa área registró '
+          'desde entonces todavía no se ve: confirmá con ella antes de decidir con esos datos. '
+          'Al cerrar la app, conviene cerrar sesión para no aparecer "sin señal".',
+      'Sincronización: ver qué quedó sin subir y forzar "Sincronizar ahora". Si el sistema '
+          'no aceptó algo al subirlo (por ejemplo, ya no alcanzaba el stock), aparece ahí con '
+          'el motivo, para reintentarlo o descartarlo.',
       'Tamaño de letra: chico, normal o grande, para toda la app.',
       'Tus datos personales (foto, contraseña, celular) se editan en "Mi perfil", desde tu '
           'usuario arriba a la derecha — no acá.',

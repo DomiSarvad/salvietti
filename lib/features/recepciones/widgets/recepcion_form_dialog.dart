@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../../../utils/texto.dart';
@@ -19,7 +20,10 @@ class RecepcionFormDialog extends StatefulWidget {
 
 class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
   late String _almacenId;
-  List<ItemRecepcion> _items = [];
+  // Índice en memoria: el texto de cada ítem se normaliza una vez, no por letra.
+  IndiceBusqueda<ItemRecepcion> _items = IndiceBusqueda(const [], _textoItem);
+
+  static String _textoItem(ItemRecepcion i) => '${i.codigo} ${i.detalle}';
   List<Proveedor> _proveedores = [];
   bool _cargandoDatos = true;
 
@@ -70,7 +74,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
       final r = await Future.wait([_svc.itemsDe(_almacenId), _svc.proveedores()]);
       if (!mounted) return;
       setState(() {
-        _items = r[0] as List<ItemRecepcion>;
+        _items = IndiceBusqueda(r[0] as List<ItemRecepcion>, _textoItem);
         _proveedores = r[1] as List<Proveedor>;
         _cargandoDatos = false;
       });
@@ -291,14 +295,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                 ],
                 Autocomplete<ItemRecepcion>(
                   displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
-                  optionsBuilder: (t) {
-                    final q = sinTildes(t.text.trim());
-                    final lista = q.isEmpty
-                        ? _items
-                        : _items.where((i) =>
-                            sinTildes(i.detalle).contains(q) || sinTildes(i.codigo).contains(q));
-                    return lista.take(30);
-                  },
+                  optionsBuilder: (t) => _items.buscar(t.text),
                   onSelected: (i) {
                     setState(() {
                       _item = i;

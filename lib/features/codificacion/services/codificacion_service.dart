@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/codificacion_modelos.dart';
@@ -66,7 +67,10 @@ class CodificacionService extends ChangeNotifier {
   Future<Set<int>> presentacionesDe(int saborId) => _repo.presentacionesDe(saborId);
   Future<List<CorridaLlenadoraRef>> corridasLlenadoraDe(int saborId) =>
       _repo.corridasLlenadoraDe(saborId);
-  Future<List<ItemInventario>> buscarItems(String texto) => _repo.items(busqueda: texto);
+  // Se busca en memoria (CatalogoLocal): una consulta, no una por letra.
+  late final _catItems =
+      CatalogoLocal<ItemInventario>(_repo.items, (i) => '${i.codigo} ${i.detalle}');
+  Future<List<ItemInventario>> buscarItems(String texto) => _catItems.buscar(texto);
 
   /// Devuelve null si salió bien, o el mensaje de error.
   Future<String?> iniciarCorrida({

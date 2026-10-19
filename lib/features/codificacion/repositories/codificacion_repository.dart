@@ -79,7 +79,10 @@ class SupabaseCodificacionRepository implements CodificacionRepository {
     if (busqueda != null && busqueda.trim().isNotEmpty) {
       query = query.ilike('detalle', '%${busqueda.trim()}%');
     }
-    final filas = await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
+    // Sin texto: el catálogo entero, para buscarlo en memoria (CatalogoLocal).
+    final filas = (busqueda == null || busqueda.trim().isEmpty)
+        ? await SupabaseService.todasLasFilas((d, h) => query.order('detalle').range(d, h))
+        : await query.order('detalle').limit(30).timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) ItemInventario.fromMap(f)];
   }
 

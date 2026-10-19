@@ -157,8 +157,24 @@ class _VistaState extends State<_Vista> {
           )
         else if (items.isEmpty)
           _SinItems(svc: svc)
-        else
-          _TablaItems(svc: svc, items: items),
+        else ...[
+          // De a tandas: una tabla de cientos de filas se arma entera de
+          // nuevo con cada cambio. El PDF ("Imprimir reporte") sale completo.
+          _TablaItems(
+              svc: svc,
+              items: items.length > svc.limiteTabla ? items.sublist(0, svc.limiteTabla) : items),
+          if (items.length > svc.limiteTabla)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Center(
+                child: OutlinedButton.icon(
+                  onPressed: svc.mostrarMasFilas,
+                  icon: const Icon(Icons.expand_more),
+                  label: Text('Mostrar más (viendo ${svc.limiteTabla} de ${items.length})'),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }

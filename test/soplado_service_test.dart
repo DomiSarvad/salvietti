@@ -5,6 +5,14 @@ import 'package:salvietti_control/features/soplado/services/soplado_service.dart
 import 'package:salvietti_control/models/usuario.dart';
 
 class _Repo implements SopladoRepository {
+  void Function()? alCambiar; // simula un aviso de Realtime
+
+  @override
+  Suscripcion escucharCambios(void Function() onCambio) {
+    alCambiar = onCambio;
+    return const SuscripcionNula();
+  }
+
   List<CorridaSoplado> lista;
   bool fallar = false;
   ErrorNegocioSoplado? negocio;
@@ -228,6 +236,33 @@ void main() {
           contains('en curso'));
       expect(await s.anularCorrida(_corrida(), 'Sabor equivocado'), isNull);
       expect(repo.anuladas, [1]);
+    });
+  });
+
+  group('tiempo real', () {
+    test('un cambio de otra persona recarga solo, sin spinner ni error', () async {
+      final repo = _Repo();
+      final s = await _svc('soplado', repo);
+      expect(s.corridas, isEmpty);
+      var vecesCargando = 0;
+      s.addListener(() {
+        if (s.cargando) vecesCargando++;
+      });
+
+      repo.lista = [_corrida()];
+      repo.alCambiar!();
+      repo.alCambiar!(); // dos avisos seguidos: una sola recarga
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(s.corridas, hasLength(1));
+      expect(vecesCargando, 0);
+
+      // Si la recarga en segundo plano falla, se siguen viendo los datos.
+      repo.fallar = true;
+      repo.alCambiar!();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(s.error, isNull);
+      expect(s.corridas, hasLength(1));
+      s.dispose();
     });
   });
 }

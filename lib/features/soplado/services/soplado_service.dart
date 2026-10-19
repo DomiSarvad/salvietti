@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/soplado_modelos.dart';
@@ -31,15 +33,41 @@ class SopladoService extends ChangeNotifier {
   List<CorridaSoplado> get historial =>
       corridas.where((c) => c.estado != EstadoCorrida.enCurso).toList();
 
-  Future<void> iniciar() async {
-    cargando = true;
-    error = null;
-    notifyListeners();
+  Suscripcion? _suscripcion;
+  Timer? _recargaPendiente;
+  bool _cerrado = false;
+
+  @override
+  void dispose() {
+    _cerrado = true;
+    _suscripcion?.cancelar();
+    _recargaPendiente?.cancel();
+    super.dispose();
+  }
+
+  /// Tiempo real: si otra persona de Soplado (otra máquina, otro turno)
+  /// inicia o cierra una corrida, la pantalla se actualiza sola, sin spinner.
+  void _escucharCambios() {
+    _suscripcion ??= _repo.escucharCambios(() {
+      _recargaPendiente?.cancel();
+      _recargaPendiente = Timer(const Duration(milliseconds: 400), () => _cargar(silencioso: true));
+    });
+  }
+
+  Future<void> iniciar() => _cargar(silencioso: false);
+
+  Future<void> _cargar({required bool silencioso}) async {
+    if (!silencioso) {
+      cargando = true;
+      error = null;
+      notifyListeners();
+    }
     if (!puedeVer) {
       cargando = false;
       notifyListeners();
       return;
     }
+    _escucharCambios();
     try {
       final r = await Future.wait([
         _repo.sabores(),
@@ -53,10 +81,15 @@ class SopladoService extends ChangeNotifier {
       avance = r[3] as List<AvanceSoplado>;
       error = null;
     } catch (e) {
-      error = 'No se pudo cargar Soplado. Revisá la conexión o que las '
-          'migraciones v25 y v28 estén ejecutadas.';
+      // Una recarga en segundo plano que falla no tapa la pantalla con un
+      // error: se siguen viendo los datos que ya había.
+      if (!silencioso) {
+        error = 'No se pudo cargar Soplado. Revisá la conexión o que las '
+            'migraciones v25 y v28 estén ejecutadas.';
+      }
       if (kDebugMode) debugPrint('SopladoService: $e');
     }
+    if (_cerrado) return; // la pantalla se cerró mientras cargaba
     cargando = false;
     notifyListeners();
   }
@@ -64,8 +97,14 @@ class SopladoService extends ChangeNotifier {
   Future<void> recargar() => iniciar();
 
   Future<Set<int>> presentacionesDe(int saborId) => _repo.presentacionesDe(saborId);
-  Future<List<ItemPreforma>> buscarPreformas(String texto) => _repo.preformas(busqueda: texto);
-  Future<List<Proveedor>> buscarProveedores(String texto) => _repo.proveedores(busqueda: texto);
+  // Catálogos que se buscan en memoria (CatalogoLocal): una sola consulta al
+  // servidor, no una por cada letra escrita.
+  late final _catPreformas =
+      CatalogoLocal<ItemPreforma>(_repo.preformas, (i) => '${i.codigo} ${i.detalle}');
+  late final _catProveedores = CatalogoLocal<Proveedor>(_repo.proveedores, (p) => p.nombre);
+
+  Future<List<ItemPreforma>> buscarPreformas(String texto) => _catPreformas.buscar(texto);
+  Future<List<Proveedor>> buscarProveedores(String texto) => _catProveedores.buscar(texto);
 
   /// Devuelve null si salió bien, o el mensaje de error.
   Future<String?> iniciarCorrida({

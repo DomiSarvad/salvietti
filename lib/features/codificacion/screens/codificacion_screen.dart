@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
+import '../../presencia/widgets/aviso_conexion_areas.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
@@ -122,6 +123,8 @@ class _VistaState extends State<_Vista> {
             BotonAyuda(idTour: 'codificacion', pasos: _pasosAyuda),
           ],
         ),
+        // Codificación sigue las corridas de Llenadora: si Llenadora está sin internet, avisa.
+        const AvisoConexionAreas(roles: [Rol.llenadora], margen: EdgeInsets.only(top: 10)),
         if (svc.puedeCrear) ...[
           const SizedBox(height: 8),
           Align(

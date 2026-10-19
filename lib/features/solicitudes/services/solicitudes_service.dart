@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/solicitud.dart';
@@ -78,7 +79,10 @@ class SolicitudesService extends ChangeNotifier {
   int get pendientesDeAprobar =>
       solicitudes.where((s) => s.estado == EstadoSolicitud.pendiente).length;
 
-  Future<List<ItemReferencia>> buscarItems(String texto) => _repo.items(busqueda: texto);
+  // Se busca en memoria (CatalogoLocal): una consulta, no una por letra.
+  late final _catItems =
+      CatalogoLocal<ItemReferencia>(_repo.items, (i) => '${i.codigo} ${i.detalle}');
+  Future<List<ItemReferencia>> buscarItems(String texto) => _catItems.buscar(texto);
 
   /// Devuelve null si salió bien, o el mensaje de error.
   Future<String?> crear(SolicitudNueva s) async {

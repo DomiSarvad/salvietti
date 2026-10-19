@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../utils/notificaciones.dart';
-import '../../../utils/texto.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/entregas_modelos.dart';
 import '../services/entregas_service.dart';
@@ -21,7 +21,10 @@ class _LineaForm {
 }
 
 class _PedidoFormDialogState extends State<PedidoFormDialog> {
-  List<ItemPedible> _items = [];
+  // Índice en memoria: el texto de cada ítem se normaliza una vez, no por letra.
+  IndiceBusqueda<ItemPedible> _items = IndiceBusqueda(const [], _textoItem);
+
+  static String _textoItem(ItemPedible i) => '${i.codigo} ${i.detalle}';
   bool _cargando = true;
   String? _area;
   final _motivo = TextEditingController();
@@ -53,7 +56,7 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
       final items = await _svc.itemsPedibles();
       if (!mounted) return;
       setState(() {
-        _items = items;
+        _items = IndiceBusqueda(items, _textoItem);
         _cargando = false;
       });
     } catch (_) {
@@ -180,12 +183,8 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
             flex: 3,
             child: Autocomplete<ItemPedible>(
               displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
-              optionsBuilder: (t) {
-                final q = sinTildes(t.text.trim());
-                return _items.where((i) =>
-                    !elegidos.contains(i.id) &&
-                    (q.isEmpty || sinTildes(i.detalle).contains(q) || sinTildes(i.codigo).contains(q)));
-              },
+              optionsBuilder: (t) =>
+                  _items.buscar(t.text, limite: 50, donde: (i) => !elegidos.contains(i.id)),
               onSelected: (i) => setState(() => linea.item = i),
               fieldViewBuilder: (context, c, foco, _) => TextField(
                 controller: c,

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/jarabes_modelos.dart';
@@ -47,15 +49,42 @@ class JarabesService extends ChangeNotifier {
   List<Preparado> get historial =>
       preparados.where((p) => p.estado != EstadoPreparado.enCurso).toList();
 
-  Future<void> iniciar() async {
-    cargando = true;
-    error = null;
-    notifyListeners();
+  Suscripcion? _suscripcion;
+  Timer? _recargaPendiente;
+  bool _cerrado = false;
+
+  @override
+  void dispose() {
+    _cerrado = true;
+    _suscripcion?.cancelar();
+    _recargaPendiente?.cancel();
+    super.dispose();
+  }
+
+  /// Tiempo real: cuando otra persona inicia/finaliza un preparado, resuelve
+  /// una receta, o Soplado cierra una corrida, la pantalla se actualiza sola
+  /// (sin spinner). Varios cambios seguidos se juntan en una sola recarga.
+  void _escucharCambios() {
+    _suscripcion ??= _repo.escucharCambios(() {
+      _recargaPendiente?.cancel();
+      _recargaPendiente = Timer(const Duration(milliseconds: 400), () => _cargar(silencioso: true));
+    });
+  }
+
+  Future<void> iniciar() => _cargar(silencioso: false);
+
+  Future<void> _cargar({required bool silencioso}) async {
+    if (!silencioso) {
+      cargando = true;
+      error = null;
+      notifyListeners();
+    }
     if (!puedeVerProduccion) {
       cargando = false;
       notifyListeners();
       return;
     }
+    _escucharCambios();
     try {
       final r = await Future.wait([
         _repo.sabores(),
@@ -69,17 +98,29 @@ class JarabesService extends ChangeNotifier {
       recetasPendientes = r[3] as List<RecetaPropuesta>;
       error = null;
     } catch (e) {
-      error = 'No se pudo cargar Jarabes. Revisá la conexión o que la '
-          'migración v26 esté ejecutada.';
+      // Una recarga en segundo plano que falla no tapa la pantalla con un
+      // error: se siguen viendo los datos que ya había.
+      if (!silencioso) {
+        error = 'No se pudo cargar Jarabes. Revisá la conexión o que la '
+            'migración v26 esté ejecutada.';
+      }
       if (kDebugMode) debugPrint('JarabesService: $e');
     }
+    if (_cerrado) return; // la pantalla se cerró mientras cargaba
     cargando = false;
     notifyListeners();
   }
 
   Future<void> recargar() => iniciar();
 
-  Future<List<ItemJarabes>> buscarItems(String texto) => _repo.itemsJarabes(busqueda: texto);
+  // Se busca en memoria (CatalogoLocal): una consulta, no una por letra.
+  late final _catItems =
+      CatalogoLocal<ItemJarabes>(_repo.itemsJarabes, (i) => '${i.codigo} ${i.detalle}');
+  Future<List<ItemJarabes>> buscarItems(String texto) => _catItems.buscar(texto);
+
+  /// Todo el catálogo del almacén de Jarabes (para armar una receta). Antes
+  /// salía de `buscarItems('')`, que el servidor cortaba en 30 ítems.
+  Future<List<ItemJarabes>> catalogoItems() => _repo.itemsJarabes();
   Future<List<ItemReceta>> recetaVigente(int saborId) => _repo.recetaVigente(saborId);
 
   Future<List<VerificacionInsumo>> verificarInsumos(int saborId, double cantidad) =>

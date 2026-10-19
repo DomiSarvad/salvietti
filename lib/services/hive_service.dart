@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import '../models/movimiento.dart';
+import 'cola_offline.dart';
 
 /// Capa de persistencia local. Funciona en móvil, escritorio Y web
 /// (Hive usa IndexedDB por debajo en web), cumpliendo el requisito de
@@ -18,6 +19,13 @@ import '../models/movimiento.dart';
 class HiveService {
   static Future<void> init() async {
     await Hive.initFlutter();
+    await abrirCajas();
+  }
+
+  /// Abre todas las cajas que usa la app. Separado de [init] para los tests,
+  /// que inicializan Hive en una carpeta temporal (`Hive.init(ruta)`) en vez
+  /// de la carpeta del dispositivo (`initFlutter` necesita un plugin).
+  static Future<void> abrirCajas() async {
     await Hive.openBox(HiveBoxes.tapas);
     await Hive.openBox(HiveBoxes.preformas);
     await Hive.openBox(HiveBoxes.materiaPrima);
@@ -25,6 +33,7 @@ class HiveService {
     await Hive.openBox(HiveBoxes.sesion);
     await Hive.openBox(HiveBoxes.perfilPendiente);
     await Hive.openBox(HiveBoxes.preferencias);
+    await ColaOffline.init();
   }
 
   static Box _boxCatalogo(String tabla) {

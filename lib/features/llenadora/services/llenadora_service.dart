@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/llenadora_modelos.dart';
@@ -65,7 +66,10 @@ class LlenadoraService extends ChangeNotifier {
 
   Future<Set<int>> presentacionesDe(int saborId) => _repo.presentacionesDe(saborId);
   Future<List<PreparadoJarabes>> preparadosDe(int saborId) => _repo.preparadosDe(saborId);
-  Future<List<ItemInventario>> buscarTapas(String texto) => _repo.tapas(busqueda: texto);
+  // Se busca en memoria (CatalogoLocal): una consulta, no una por letra.
+  late final _catTapas =
+      CatalogoLocal<ItemInventario>(_repo.tapas, (i) => '${i.codigo} ${i.detalle}');
+  Future<List<ItemInventario>> buscarTapas(String texto) => _catTapas.buscar(texto);
 
   /// Devuelve null si salió bien, o el mensaje de error.
   Future<String?> iniciarCorrida({

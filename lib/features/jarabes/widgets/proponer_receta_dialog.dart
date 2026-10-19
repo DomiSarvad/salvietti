@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../utils/notificaciones.dart';
-import '../../../utils/texto.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/jarabes_modelos.dart';
 import '../services/jarabes_service.dart';
@@ -23,15 +23,18 @@ class ProponerRecetaDialog extends StatefulWidget {
 class _ProponerRecetaDialogState extends State<ProponerRecetaDialog> {
   Sabor? _sabor;
   final _lineas = <_LineaForm>[_LineaForm()];
-  List<ItemJarabes> _catalogo = [];
+  // Índice en memoria: el texto de cada ítem se normaliza una vez, no por letra.
+  IndiceBusqueda<ItemJarabes> _catalogo = IndiceBusqueda(const [], _textoItem);
+
+  static String _textoItem(ItemJarabes i) => '${i.codigo} ${i.detalle}';
   bool _guardando = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    widget.servicio.buscarItems('').then((r) {
-      if (mounted) setState(() => _catalogo = r);
+    widget.servicio.catalogoItems().then((r) {
+      if (mounted) setState(() => _catalogo = IndiceBusqueda(r, _textoItem));
     });
   }
 
@@ -132,12 +135,8 @@ class _ProponerRecetaDialogState extends State<ProponerRecetaDialog> {
             flex: 3,
             child: Autocomplete<ItemJarabes>(
               displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
-              optionsBuilder: (t) {
-                final q = sinTildes(t.text.trim());
-                return _catalogo.where((i) =>
-                    !elegidos.contains(i.id) &&
-                    (q.isEmpty || sinTildes(i.detalle).contains(q) || sinTildes(i.codigo).contains(q)));
-              },
+              optionsBuilder: (t) =>
+                  _catalogo.buscar(t.text, limite: 50, donde: (i) => !elegidos.contains(i.id)),
               onSelected: (i) => setState(() => linea.item = i),
               fieldViewBuilder: (context, c, foco, _) => TextField(
                 controller: c,

@@ -7,6 +7,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/produccion_service.dart';
 import '../../../utils/formatters.dart';
 import '../../inventario/models/existencia_item.dart';
+import '../../presencia/widgets/aviso_conexion_areas.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
 import '../models/dashboard_modelos.dart';
 import '../repositories/dashboard_repository.dart';
@@ -197,6 +198,8 @@ class _VistaState extends State<_Vista> {
               ),
               BotonAyuda(idTour: 'inicio', pasos: _pasosAyuda),
             ]),
+            // Qué áreas están sin internet (sus datos de acá pueden estar atrasados).
+            const AvisoConexionAreas(roles: Rol.todos, margen: EdgeInsets.only(top: 12)),
             const SizedBox(height: 16),
             _pasoAlmacenes.envolver(
               Wrap(

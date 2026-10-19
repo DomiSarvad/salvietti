@@ -1,0 +1,112 @@
+# Respaldo automático de Salvietti Control (ver docs/backups.md).
+#
+# - Base de datos: TODOS LOS DÍAS a las 03:00 (hora de Bolivia).
+# - Fotos (Supabase Storage): los domingos, y cada vez que se corre a mano.
+#
+# Cada respaldo se cifra con una contraseña (secreto BACKUP_PASSWORD) antes
+# de guardarse, y queda en la pestaña Actions de GitHub durante 30 días.
+# Se puede correr a mano: Actions → "Respaldo diario" → Run workflow.
+
+name: Respaldo diario
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC = 03:00 en Bolivia (UTC-4)
+  workflow_dispatch:
+    inputs:
+      incluir_fotos:
+        description: 'Incluir también las fotos (Storage)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: respaldo
+  cancel-in-progress: false
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar que estén los secretos
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          faltan=""
+          [ -z "$DB_URL" ] && faltan="$faltan SUPABASE_DB_URL"
+          [ -z "$PASS" ] && faltan="$faltan BACKUP_PASSWORD"
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan los secretos:$faltan (ver docs/backups.md)"
+            exit 1
+          fi
+
+      - name: Instalar pg_dump 17
+        # pg_dump tiene que ser de una versión igual o mayor que la base de
+        # Supabase (15 o 17); el de 17 sirve para las dos.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Respaldar la base de datos
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p respaldo
+          dia=$(TZ=America/La_Paz date +%Y-%m-%d)
+          echo "DIA=$dia" >> "$GITHUB_ENV"
+          # public = todos los datos de la app; auth = usuarios y contraseñas
+          # (cifradas); storage = qué foto es de qué registro.
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" \
+            --format=custom --no-owner --no-privileges \
+            --schema=public --schema=auth --schema=storage \
+            --file="respaldo/base_$dia.dump"
+          # Comprueba que el archivo se pueda leer antes de darlo por bueno.
+          /usr/lib/postgresql/17/bin/pg_restore --list "respaldo/base_$dia.dump" > /dev/null
+          ls -lh respaldo
+
+      - name: ¿Toca respaldar fotos hoy?
+        # Las fotos pesan mucho más que la base: los domingos alcanza (y no
+        # llena el espacio de GitHub). A mano, según lo que se elija.
+        env:
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          INCLUIR: ${{ inputs.incluir_fotos }}
+        run: |
+          if [ "$MANUAL" = "true" ]; then fotos="$INCLUIR"
+          elif [ "$(TZ=America/La_Paz date +%u)" = "7" ]; then fotos=true
+          else fotos=false; fi
+          echo "FOTOS=$fotos" >> "$GITHUB_ENV"
+          echo "Fotos en este respaldo: $fotos"
+
+      - name: Respaldar las fotos
+        if: env.FOTOS == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/backup/descargar_storage.mjs respaldo/storage
+
+      - name: Comprimir y cifrar
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          tar -czf - -C respaldo . \
+            | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+                -pass env:BACKUP_PASSWORD \
+                -out "salvietti_respaldo_$DIA.tar.gz.enc"
+          rm -rf respaldo
+          ls -lh salvietti_respaldo_*.enc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: salvietti_respaldo_${{ env.DIA }}
+          path: salvietti_respaldo_*.enc
+          retention-days: 30
+          compression-level: 0 # ya está comprimido

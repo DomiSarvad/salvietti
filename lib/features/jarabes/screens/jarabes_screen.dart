@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
+import '../../presencia/widgets/aviso_conexion_areas.dart';
 import '../../../models/produccion.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/produccion_service.dart';
@@ -427,6 +428,8 @@ class _SeccionAvanceSoplado extends StatelessWidget {
           const Text('Avance de Soplado (últimos 14 días)',
               style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
+          // Si Soplado está sin internet, este avance puede estar atrasado.
+          const AvisoConexionAreas(roles: [Rol.soplado]),
           if (svc.avanceSoplado.isEmpty)
             const Text('Sin corridas de soplado registradas en este período.',
                 style: TextStyle(color: Colors.black54))

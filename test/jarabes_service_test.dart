@@ -5,6 +5,9 @@ import 'package:salvietti_control/features/jarabes/services/jarabes_service.dart
 import 'package:salvietti_control/models/usuario.dart';
 
 class _Repo implements JarabesRepository {
+  @override
+  Suscripcion escucharCambios(void Function() onCambio) => const SuscripcionNula();
+
   List<Preparado> preparadosFijos;
   List<RecetaPropuesta> pendientesFijas;
   bool fallar = false;

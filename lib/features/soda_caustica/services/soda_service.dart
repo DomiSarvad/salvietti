@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/soda_modelos.dart';
@@ -46,7 +47,10 @@ class SodaService extends ChangeNotifier {
 
   Future<void> recargar() => iniciar();
 
-  Future<List<ItemInventario>> buscarItems(String texto) => _repo.items(busqueda: texto);
+  // Se busca en memoria (CatalogoLocal): una consulta, no una por letra.
+  late final _catItems =
+      CatalogoLocal<ItemInventario>(_repo.items, (i) => '${i.codigo} ${i.detalle}');
+  Future<List<ItemInventario>> buscarItems(String texto) => _catItems.buscar(texto);
 
   /// Devuelve el id de la entrega creada (para armar la constancia), o
   /// lanza con el mensaje de error ya en `error` — se usa desde el diálogo,

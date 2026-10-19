@@ -209,7 +209,7 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 46),
+              const SizedBox(height: 6),
               DialogRibbon(
                   texto: nombre.isEmpty
                       ? (_esEdicion ? 'Editar usuario' : 'Nuevo usuario')

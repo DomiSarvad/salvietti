@@ -103,12 +103,16 @@ class RecepcionesService extends ChangeNotifier {
   }
 
   Future<void> _cargarAlmacen(String id) async {
-    recepciones = await _repo.recepciones(id);
+    // Las dos consultas a la vez, no una detrás de la otra.
+    final conReclamos = vista == VistaRecepciones.reclamos;
+    final r = await Future.wait([
+      _repo.recepciones(id),
+      if (conReclamos) _repo.diferenciasDelMes(id, mesReclamos),
+    ]);
+    recepciones = r[0] as List<RecepcionDetalle>;
     almacenId = id;
     error = null;
-    if (vista == VistaRecepciones.reclamos) {
-      reclamos = await _repo.diferenciasDelMes(id, mesReclamos);
-    }
+    if (conReclamos) reclamos = r[1] as List<DiferenciaMes>;
   }
 
   void _fallo(Object e) {

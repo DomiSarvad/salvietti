@@ -104,12 +104,28 @@ class BalanceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Cada número que se escribe en una fila redibuja la pantalla: el filtro
+  // se recalcula solo si cambió la búsqueda (o se recargaron las filas), y el
+  // texto sin tildes de cada ítem se arma una sola vez.
+  final _textoFila = Expando<String>();
+  List<FilaBalance>? _visiblesMemo;
+  (String, List<FilaBalance>)? _visiblesClave;
+
   List<FilaBalance> get visibles {
     final q = sinTildes(busqueda.trim());
     if (q.isEmpty) return filas;
-    return filas
-        .where((f) =>
-            sinTildes(f.item.detalle).contains(q) || sinTildes(f.item.codigo).contains(q))
+    final clave = (q, filas);
+    final memo = _visiblesMemo;
+    if (memo != null &&
+        _visiblesClave?.$1 == q &&
+        identical(_visiblesClave?.$2, filas)) {
+      return memo;
+    }
+    _visiblesClave = clave;
+    return _visiblesMemo = filas
+        .where((f) => (_textoFila[f] ??=
+                '${sinTildes(f.item.detalle)} ${sinTildes(f.item.codigo)}')
+            .contains(q))
         .toList();
   }
 

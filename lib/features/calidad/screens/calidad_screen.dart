@@ -83,19 +83,26 @@ class _VistaState extends State<_Vista> {
     // El historial de análisis puede crecer mucho: queda como lista
     // perezosa aparte, después del encabezado (que se construye entero de
     // entrada para que el tour siempre encuentre sus pasos).
-    return ListView(
+    // Lista perezosa (ListView.builder): cada tarjeta del historial se crea
+    // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
+    // encabezado es el ítem 0 y se construye entero, así el tour siempre
+    // encuentra sus pasos.
+    final lista = svc.analisis;
+    return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        _encabezado(svc),
-        if (svc.analisis.isEmpty)
-          const Padding(
+      itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
+      itemBuilder: (context, i) {
+        if (i == 0) return _encabezado(svc);
+        if (lista.isEmpty) {
+          return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay análisis registrados.',
                 style: TextStyle(color: Colors.black54)),
-          )
-        else
-          for (final a in svc.analisis) _TarjetaAnalisis(svc: svc, a: a),
-      ],
+          );
+        }
+        final a = lista[i - 1];
+        return _TarjetaAnalisis(svc: svc, a: a);
+      },
     );
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:toastification/toastification.dart';
 import '../../core/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/hive_service.dart';
@@ -77,6 +78,18 @@ class _LoginScreenState extends State<LoginScreen> {
         await auth.iniciarSesion(_emailCtrl.text.trim(), _passCtrl.text);
     if (resultado.ok) {
       await HiveService.guardarUltimoEmail(_emailCtrl.text.trim());
+      if (auth.sinConexion) {
+        // Sin context: esta pantalla ya se reemplazó por el menú.
+        toastification.show(
+          type: ToastificationType.warning,
+          style: ToastificationStyle.flatColored,
+          title: const Text('Entraste sin internet'),
+          description: const Text('Ves los datos de la última vez que hubo conexión en esta compu. '
+              'Lo que registres se guarda acá y se sube solo cuando vuelva internet.'),
+          autoCloseDuration: const Duration(seconds: 7),
+          alignment: Alignment.topCenter,
+        );
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -201,9 +214,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       '${_formatoEspera(_segundosEspera!)} e intentá de nuevo.',
                       style: const TextStyle(color: Colors.red),
                     ),
-                  ] else if (_error != null) ...[
+                  ] else if ((_error ?? context.watch<AuthService>().avisoLogin) != null) ...[
                     const SizedBox(height: 4),
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    // El error del último intento o, si no hubo, por qué se
+                    // cerró la sesión (ausencia, contraseña cambiada…). Se
+                    // escucha en vivo: la revisión de la sesión al abrir la
+                    // app puede terminar después de que esta pantalla aparece.
+                    Text(_error ?? context.watch<AuthService>().avisoLogin!,
+                        style: const TextStyle(color: Colors.red)),
                   ],
                   const SizedBox(height: 12),
                   SizedBox(

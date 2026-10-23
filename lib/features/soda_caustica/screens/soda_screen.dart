@@ -101,20 +101,27 @@ class _VistaState extends State<_Vista> {
     // El historial de entregas puede crecer mucho: queda como lista
     // perezosa aparte, después del encabezado (que se construye entero de
     // entrada para que el tour siempre encuentre sus pasos).
-    return ListView(
+    // Lista perezosa (ListView.builder): cada tarjeta del historial se crea
+    // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
+    // encabezado es el ítem 0 y se construye entero, así el tour siempre
+    // encuentra sus pasos.
+    final lista = svc.entregas;
+    return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        _encabezado(context, svc),
-        if (svc.entregas.isEmpty)
-          const Padding(
+      itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
+      itemBuilder: (context, i) {
+        if (i == 0) return _encabezado(context, svc);
+        if (lista.isEmpty) {
+          return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(
                 child: Text('Todavía no hay entregas registradas.',
                     style: TextStyle(color: Colors.black54))),
-          )
-        else
-          for (final e in svc.entregas) _TarjetaEntrega(e: e, onPdf: () => _pdf(context, e)),
-      ],
+          );
+        }
+        final e = lista[i - 1];
+        return _TarjetaEntrega(e: e, onPdf: () => _pdf(context, e));
+      },
     );
   }
 

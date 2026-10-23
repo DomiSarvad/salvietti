@@ -41,8 +41,10 @@ void main() {
   });
 
   setUp(() async {
+    ClienteOffline.olvidarMemoria();
+    await Hive.lazyBox(HiveBoxes.cacheLecturas).clear(); // perezosa: otra forma de abrirla
     for (final b in [
-      HiveBoxes.cacheLecturas,
+      HiveBoxes.cacheFechas,
       HiveBoxes.colaOffline,
       HiveBoxes.erroresOffline,
       HiveBoxes.idsTemporales,
@@ -55,9 +57,9 @@ void main() {
 
   test('una lectura sin internet devuelve la última copia guardada', () async {
     final enLinea = ClienteOffline(MockClient((_) async => http.Response('[{"id":1}]', 200)));
-    await _enviar(enLinea, _pedido('GET', '/rest/v1/sabores?select=id'));
+    await _enviar(enLinea, _pedido('GET', '/rest/v1/inv_items?select=id'));
 
-    final r = await _enviar(ClienteOffline(_sinRed), _pedido('GET', '/rest/v1/sabores?select=id'));
+    final r = await _enviar(ClienteOffline(_sinRed), _pedido('GET', '/rest/v1/inv_items?select=id'));
     expect(r.statusCode, 200);
     expect(r.body, '[{"id":1}]');
     expect(ClienteOffline.hayRed.value, isFalse);
@@ -196,5 +198,27 @@ void main() {
     expect((id as num).toInt(), lessThan(0));
     await db.rpc('soplado_finalizar_corrida', params: {'p_id': id});
     expect(ColaOffline.cantidadPendientes, 2);
+  });
+
+  test('los catálogos fijos se responden desde memoria hasta que alguien escribe algo', () async {
+    var pedidos = 0;
+    final c = ClienteOffline(MockClient((req) async {
+      if (req.method == 'GET') pedidos++;
+      return http.Response('[{"id":"general"}]', 200);
+    }));
+    await _enviar(c, _pedido('GET', '/rest/v1/inv_almacenes?select=*'));
+    final r = await _enviar(c, _pedido('GET', '/rest/v1/inv_almacenes?select=*'));
+    expect(r.body, '[{"id":"general"}]');
+    expect(pedidos, 1); // la segunda no fue al servidor
+
+    // Lo que no es catálogo (ej. el stock) siempre va al servidor.
+    await _enviar(c, _pedido('GET', '/rest/v1/inv_existencia'));
+    await _enviar(c, _pedido('GET', '/rest/v1/inv_existencia'));
+    expect(pedidos, 3);
+
+    // Una escritura (una RPC puede tocar cualquier tabla) borra la memoria.
+    await _enviar(c, _pedido('POST', '/rest/v1/rpc/inv_registrar_movimiento', cuerpo: {}));
+    await _enviar(c, _pedido('GET', '/rest/v1/inv_almacenes?select=*'));
+    expect(pedidos, 4);
   });
 }

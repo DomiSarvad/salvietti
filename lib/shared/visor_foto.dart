@@ -53,8 +53,8 @@ class _VisorFotoState extends State<_VisorFoto> {
     }
     final p = _dobleToque?.localPosition ?? Offset.zero;
     _zoom.value = Matrix4.identity()
-      ..translate(-p.dx, -p.dy)
-      ..scale(2.0);
+      ..translateByDouble(-p.dx, -p.dy, 0, 1)
+      ..scaleByDouble(2, 2, 1, 1);
   }
 
   @override

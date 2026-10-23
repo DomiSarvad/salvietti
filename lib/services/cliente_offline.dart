@@ -53,6 +53,43 @@ class ClienteOffline extends http.BaseClient {
   /// el `timeoutRed` de 8 s de los repositorios, que sin esto ganaría).
   static const _esperaConCopia = Duration(seconds: 5);
 
+  /// Catálogos que casi no cambian y que muchas pantallas piden PRIMERO, antes
+  /// de pedir lo demás (ej. la lista de almacenes): se guardan en memoria unos
+  /// minutos, así entrar a Almacenes, Recepciones o el Inicio no espera ese
+  /// viaje al servidor cada vez. Cualquier escritura los borra de la memoria
+  /// (una RPC puede tocar cualquier tabla: borra todo), así lo que uno cambia se
+  /// ve al toque; lo que cambia OTRA persona tarda hasta [_vidaMemoria].
+  static const _catalogos = {
+    'inv_almacenes',
+    'inv_categorias',
+    'sabores',
+    'presentaciones',
+    'sabor_presentacion',
+    'app_modulos',
+  };
+  static const _vidaMemoria = Duration(minutes: 2);
+  static final _memoria = <String, ({DateTime en, String tabla, http.Response r})>{};
+
+  /// Vacía la memoria de catálogos (al cerrar sesión, y en los tests).
+  static void olvidarMemoria() => _memoria.clear();
+
+  static String? _tablaDeLectura(http.BaseRequest r) {
+    if (r.method.toUpperCase() != 'GET') return null;
+    final rest = _despues(r.url.pathSegments, 'rest', 'v1');
+    if (rest == null || rest.isEmpty || rest.first == 'rpc') return null;
+    return rest.first;
+  }
+
+  static void _olvidarPorEscritura(http.BaseRequest r) {
+    final rest = _despues(r.url.pathSegments, 'rest', 'v1');
+    if (rest == null || rest.isEmpty) return;
+    if (rest.first == 'rpc') {
+      _memoria.clear();
+    } else {
+      _memoria.removeWhere((_, v) => v.tabla == rest.first);
+    }
+  }
+
   // RPC que solo consultan: se cachean como un GET, nunca se encolan.
   static const _rpcLectura = {
     'jarabes_verificar_insumos',
@@ -182,11 +219,26 @@ class ClienteOffline extends http.BaseClient {
     final cuerpo = await request.finalize().toBytes();
     final clave =
         '${usuarioDe(request.headers)}|${request.method}|${request.url}|${utf8.decode(cuerpo, allowMalformed: true)}';
-    final copia = ColaOffline.leerCache(clave);
 
-    final red = _interno
-        .send(_copiar(request, cuerpo))
-        .then((r) => http.Response.fromStream(r));
+    final tabla = _tablaDeLectura(request);
+    final enMemoria = _memoria[clave];
+    if (enMemoria != null && DateTime.now().difference(enMemoria.en) < _vidaMemoria) {
+      final r = enMemoria.r;
+      return _aStreamed(r.statusCode, r.headers, r.bodyBytes, request);
+    }
+
+    // El pedido sale ya; la copia del disco se lee mientras tanto.
+    final red = _interno.send(_copiar(request, cuerpo)).then((r) async {
+      final resp = await http.Response.fromStream(r);
+      if (tabla != null && _catalogos.contains(tabla) && resp.statusCode == 200) {
+        _memoria[clave] = (en: DateTime.now(), tabla: tabla, r: resp);
+      }
+      return resp;
+    });
+    // Si la red falla mientras se lee el disco, que no quede como error "sin
+    // atender": quien espera `red` más abajo lo recibe igual.
+    unawaited(red.then((_) {}, onError: (_) {}));
+    final copia = await ColaOffline.leerCache(clave);
 
     if (copia == null) {
       try {
@@ -246,6 +298,7 @@ class ClienteOffline extends http.BaseClient {
   Future<http.StreamedResponse> _escribir(http.BaseRequest request) async {
     final cuerpo = await request.finalize().toBytes();
     final usuario = usuarioDe(request.headers);
+    _olvidarPorEscritura(request);
 
     // Si ya hay algo pendiente de esta persona, lo nuevo va detrás (el orden
     // importa: finalizar una corrida va después de iniciarla). Lo mismo si
@@ -440,16 +493,23 @@ class ClienteOffline extends http.BaseClient {
   // -------------------- Utilidades --------------------
 
   /// Id del usuario (`sub` del JWT) que hace el pedido; "anon" sin sesión.
+  /// Quien entró SIN internet (`SesionOffline`): no tiene sesión de Supabase,
+  /// así que sus pedidos van con la clave anónima. Con esto sus lecturas usan
+  /// SU copia guardada y lo que registra queda en la cola a SU nombre (se sube
+  /// cuando vuelve internet y `AuthService` reabre la sesión de verdad).
+  static String? usuarioSinConexion;
+
   static String usuarioDe(Map<String, String> headers) {
     final auth = headers['Authorization'] ?? headers['authorization'] ?? '';
     final partes = auth.replaceFirst('Bearer ', '').split('.');
-    if (partes.length != 3) return 'anon';
-    try {
-      final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(partes[1]))));
-      return (payload is Map ? payload['sub'] as String? : null) ?? 'anon';
-    } catch (_) {
-      return 'anon';
+    String? sub;
+    if (partes.length == 3) {
+      try {
+        final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(partes[1]))));
+        sub = payload is Map ? payload['sub'] as String? : null;
+      } catch (_) {}
     }
+    return sub ?? usuarioSinConexion ?? 'anon';
   }
 
   static bool _esJson(Map<String, String> headers) {

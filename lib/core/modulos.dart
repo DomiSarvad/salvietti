@@ -29,6 +29,7 @@ class Modulo {
   static const historial = 'historial';
   static const usuarios = 'usuarios';
   static const permisos = 'permisos';
+  static const compras = 'compras'; // pedidos de compra de Almacén (v43)
 
   /// Módulos que abren la pantalla de Almacenes.
   static const inventarios = [

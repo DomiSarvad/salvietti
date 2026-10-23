@@ -97,10 +97,21 @@ jobs:
         env:
           BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
         run: |
+          # Se quitan espacios y saltos de línea del principio y del final:
+          # al pegar la contraseña en GitHub se suele colar uno invisible, y
+          # después la que uno escribe para abrir el respaldo "no coincide".
+          CLAVE="$BACKUP_PASSWORD"
+          CLAVE="${CLAVE#"${CLAVE%%[![:space:]]*}"}"   # sin espacios/saltos al principio
+          CLAVE="${CLAVE%"${CLAVE##*[![:space:]]}"}"   # ni al final
+          export CLAVE
+          echo "La contraseña usada tiene ${#CLAVE} caracteres (para comparar con la que tenés anotada)."
           tar -czf - -C respaldo . \
             | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-                -pass env:BACKUP_PASSWORD \
+                -pass env:CLAVE \
                 -out "salvietti_respaldo_$DIA.tar.gz.enc"
+          # Comprueba que se pueda volver a abrir antes de guardarlo.
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:CLAVE \
+            -in "salvietti_respaldo_$DIA.tar.gz.enc" | tar -tzf - > /dev/null
           rm -rf respaldo
           ls -lh salvietti_respaldo_*.enc
 

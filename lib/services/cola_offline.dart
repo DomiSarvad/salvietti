@@ -82,13 +82,19 @@ class ColaOffline {
   static const _baseIdTemporal = 900000000000;
   static final patronIdTemporal = RegExp(r'(?<![0-9])-9\d{11}(?![0-9])');
 
-  static Box get _cache => Hive.box(HiveBoxes.cacheLecturas);
+  // Perezosa: al abrir la app solo se cargan las claves, no las respuestas
+  // (pueden ser cientos y alargaban el arranque); cada una se lee del disco
+  // recién cuando hace falta. Las fechas van aparte, en una caja chica, para
+  // poder podar sin leer todas las respuestas.
+  static LazyBox get _cache => Hive.lazyBox(HiveBoxes.cacheLecturas);
+  static Box get _fechasCache => Hive.box(HiveBoxes.cacheFechas);
   static Box get _cola => Hive.box(HiveBoxes.colaOffline);
   static Box get _errores => Hive.box(HiveBoxes.erroresOffline);
   static Box get _ids => Hive.box(HiveBoxes.idsTemporales);
 
   static Future<void> init() async {
-    await Hive.openBox(HiveBoxes.cacheLecturas);
+    await Hive.openLazyBox(HiveBoxes.cacheLecturas);
+    await Hive.openBox(HiveBoxes.cacheFechas);
     await Hive.openBox(HiveBoxes.colaOffline);
     await Hive.openBox(HiveBoxes.erroresOffline);
     await Hive.openBox(HiveBoxes.idsTemporales);
@@ -108,31 +114,46 @@ class ColaOffline {
     return '${a.toRadixString(16)}${b.toRadixString(16)}_${s.length}';
   }
 
-  static Map? leerCache(String clave) {
-    final v = _cache.get(_hash(clave));
+  /// Lo que se está escribiendo en el disco ahora mismo: hasta que termina,
+  /// se lee de acá (si no, una lectura que llega justo en ese momento —por
+  /// ejemplo, se cortó internet— no encontraría la copia recién guardada).
+  static final _guardando = <String, Map>{};
+
+  static Future<Map?> leerCache(String clave) async {
+    final h = _hash(clave);
+    final v = _guardando[h] ?? await _cache.get(h);
     if (v is! Map || v['clave'] != clave) return null;
     return v;
   }
 
   static Future<void> guardarCache(
       String clave, int status, Map<String, String> headers, Uint8List cuerpo) async {
-    await _cache.put(_hash(clave), {
+    final h = _hash(clave);
+    final fecha = DateTime.now().toIso8601String();
+    final valor = {
       'clave': clave,
       'status': status,
       'headers': headers,
       'cuerpo': cuerpo,
-      'fecha': DateTime.now().toIso8601String(),
-    });
+      'fecha': fecha,
+    };
+    _guardando[h] = valor;
+    try {
+      await _cache.put(h, valor);
+      await _fechasCache.put(h, fecha);
+    } finally {
+      if (identical(_guardando[h], valor)) _guardando.remove(h);
+    }
     if (_cache.length > _maxCache) await _podarCache();
   }
 
   /// Borra las consultas más viejas (ej. búsquedas que no se repiten).
   static Future<void> _podarCache() async {
-    final entradas = _cache.toMap().entries.toList()
-      ..sort((x, y) =>
-          ((x.value as Map)['fecha'] as String).compareTo((y.value as Map)['fecha'] as String));
-    final sobran = entradas.length - (_maxCache * 3 ~/ 4);
-    await _cache.deleteAll([for (final e in entradas.take(sobran)) e.key]);
+    String fechaDe(dynamic k) => (_fechasCache.get(k) as String?) ?? '';
+    final claves = _cache.keys.toList()..sort((x, y) => fechaDe(x).compareTo(fechaDe(y)));
+    final viejas = claves.take(claves.length - (_maxCache * 3 ~/ 4)).toList();
+    await _cache.deleteAll(viejas);
+    await _fechasCache.deleteAll(viejas);
   }
 
   // -------------------- Cola de escrituras --------------------

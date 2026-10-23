@@ -16,6 +16,9 @@ class AppSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final usuario = context.watch<AuthService>().usuarioActual!;
+    // Pantallas de trabajo de cada área: el Gerente no las ve en el menú (ve
+    // Informes); se le abren desde la campana cuando tiene algo que resolver.
+    final operativo = !usuario.soloInformes;
 
     final items = <_Item>[
       _Item('dashboard', 'Inicio', Icons.home_outlined, true),
@@ -25,30 +28,35 @@ class AppSidebar extends StatelessWidget {
           usuario.puedeVerProduccion),
       // Segundo en uso diario después de Producción del día.
       _Item('jarabes', 'Jarabes', Icons.water_drop_outlined,
-          usuario.puedeVerModulo(Modulo.jarabesProduccion)),
+          operativo && usuario.puedeVerModulo(Modulo.jarabesProduccion)),
       // Inventario por almacenes (nuevo): requiere la migración de permisos.
       _Item('almacenes', 'Almacenes', Icons.warehouse_outlined,
-          usuario.permisos != null && usuario.puedeVerInventario),
+          operativo && usuario.permisos != null && usuario.puedeVerInventario),
       _Item('recepciones', 'Recepciones', Icons.local_shipping_outlined,
-          usuario.puedeVerModulo(Modulo.recepciones)),
+          operativo && usuario.puedeVerModulo(Modulo.recepciones)),
       _Item('entregas', 'Entregas', Icons.assignment_turned_in_outlined,
-          usuario.puedeVerModulo(Modulo.entregas)),
+          operativo && usuario.puedeVerModulo(Modulo.entregas)),
+      _Item('compras', 'Pedidos de compra', Icons.shopping_cart_outlined,
+          operativo && usuario.puedeVerModulo(Modulo.compras)),
       _Item('solicitudes', 'Solicitudes', Icons.mark_email_read_outlined,
-          usuario.puedeVerModulo(Modulo.solicitudes)),
+          operativo && usuario.puedeVerModulo(Modulo.solicitudes)),
       _Item('soplado', 'Soplado', Icons.air_outlined,
-          usuario.puedeVerModulo(Modulo.soplado)),
+          operativo && usuario.puedeVerModulo(Modulo.soplado)),
       _Item('calidad', 'Control de Calidad', Icons.science_outlined,
-          usuario.puedeVerModulo(Modulo.calidad)),
+          operativo && usuario.puedeVerModulo(Modulo.calidad)),
       _Item('llenadora', 'Llenadora', Icons.local_drink_outlined,
-          usuario.puedeVerModulo(Modulo.llenado)),
+          operativo && usuario.puedeVerModulo(Modulo.llenado)),
       _Item('codificacion', 'Codificación', Icons.qr_code_2,
-          usuario.puedeVerModulo(Modulo.codificacion)),
+          operativo && usuario.puedeVerModulo(Modulo.codificacion)),
       _Item('salidas', 'Registro de salidas', Icons.outbox_outlined,
-          usuario.puedeVerModulo(Modulo.salidas)),
+          operativo && usuario.puedeVerModulo(Modulo.salidas)),
       _Item('mermas', 'Mermas', Icons.report_problem_outlined,
-          usuario.puedeVerModulo(Modulo.mermas)),
+          operativo && usuario.puedeVerModulo(Modulo.mermas)),
       _Item('soda_caustica', 'Soda Cáustica', Icons.science_outlined,
-          usuario.puedeVerModulo(Modulo.sodaCaustica)),
+          operativo && usuario.puedeVerModulo(Modulo.sodaCaustica)),
+      // Informes por área (gráficos semanales/mensuales, PDF y Excel).
+      _Item('informes', 'Informes', Icons.insights_outlined,
+          usuario.puedeVerModulo(Modulo.informeProduccion)),
       _Item('informe_gerente', 'Informe de Producción', Icons.summarize_outlined,
           usuario.puedeVerModulo(Modulo.informeProduccion)),
       _Item('historial', 'Historial / Bitácora', Icons.history,

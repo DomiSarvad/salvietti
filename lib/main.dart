@@ -14,6 +14,7 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/perfil/completar_datos_screen.dart';
 import 'widgets/aviso_sincronizacion.dart';
+import 'widgets/vigilante_sesion.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 Future<void> main() async {
@@ -76,7 +77,9 @@ class SalviettiApp extends StatelessWidget {
               data: MediaQuery.of(context)
                   .copyWith(textScaler: TextScaler.linear(prefs.escalaTexto)),
               // Avisos de "guardado sin internet" / "se subió lo pendiente".
-              child: AvisoSincronizacion(child: child!),
+              // Vigilante: pide el ingreso otra vez si la app estuvo sin usarse
+              // demasiado tiempo (ver SesionInactividad).
+              child: VigilanteSesion(child: AvisoSincronizacion(child: child!)),
             ),
             home: const _RaizApp(),
           ),

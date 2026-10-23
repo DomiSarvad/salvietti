@@ -206,19 +206,26 @@ class _VistaState extends State<_Vista> {
     // así siempre se construye entero de entrada — si no, con varios
     // preparados "en curso" el título "Historial" podía quedar todavía sin
     // construir cuando arranca el tour, y ese paso se salteaba en silencio.
-    return ListView(
+    // Lista perezosa (ListView.builder): cada tarjeta del historial se crea
+    // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
+    // encabezado es el ítem 0 y se construye entero, así el tour siempre
+    // encuentra sus pasos.
+    final lista = svc.historial;
+    return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        _encabezadoYPlan(context, svc),
-        if (svc.historial.isEmpty)
-          const Padding(
+      itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
+      itemBuilder: (context, i) {
+        if (i == 0) return _encabezadoYPlan(context, svc);
+        if (lista.isEmpty) {
+          return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay preparados finalizados.',
                 style: TextStyle(color: Colors.black54)),
-          )
-        else
-          for (final p in svc.historial) _TarjetaPreparado(svc: svc, p: p),
-      ],
+          );
+        }
+        final p = lista[i - 1];
+        return _TarjetaPreparado(svc: svc, p: p);
+      },
     );
   }
 

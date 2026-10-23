@@ -20,6 +20,13 @@ class Rol {
   static const registroSalidas = 'registro_salidas';
   static const sodaCaustica = 'soda_caustica';
 
+  /// Roles que en el menú ven INFORMES en vez de las pantallas de trabajo de
+  /// cada área (Almacenes, Soplado, Jarabes…): el Gerente no opera, mira
+  /// resultados. Es solo presentación — los datos los sigue protegiendo el
+  /// servidor con sus permisos —, y esas pantallas siguen abriéndose desde la
+  /// campana cuando hace falta (ej. un pedido de compra por aprobar).
+  static const soloInformes = {gerente};
+
   /// Ordenados por área, tal como se muestran en el selector.
   static const todos = [
     gerente,
@@ -184,6 +191,7 @@ class HiveBoxes {
   static const preferencias = 'box_preferencias'; // ej. tours de ayuda ya vistos
   // Modo sin conexión de los módulos nuevos (ver ColaOffline/ClienteOffline).
   static const cacheLecturas = 'box_cache_lecturas';
+  static const cacheFechas = 'box_cache_fechas'; // cuándo se guardó cada lectura (para podar)
   static const colaOffline = 'box_cola_offline';
   static const erroresOffline = 'box_errores_offline';
   static const idsTemporales = 'box_ids_temporales';

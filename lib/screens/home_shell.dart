@@ -9,6 +9,8 @@ import '../features/inventario/screens/almacenes_screen.dart';
 import '../features/recepciones/screens/recepciones_screen.dart';
 import '../features/entregas/screens/entregas_screen.dart';
 import '../features/solicitudes/screens/solicitudes_screen.dart';
+import '../features/compras/screens/compras_screen.dart';
+import '../features/informes/screens/informes_screen.dart';
 import '../features/soplado/screens/soplado_screen.dart';
 import '../features/jarabes/screens/jarabes_screen.dart';
 import '../features/calidad/screens/calidad_screen.dart';
@@ -23,6 +25,9 @@ import 'configuracion/configuracion_screen.dart';
 import 'produccion/produccion_planner_screen.dart';
 import 'historial/historial_screen.dart';
 import 'usuarios/usuarios_screen.dart';
+import '../features/notificaciones/repositories/campana_repository.dart';
+import '../features/notificaciones/services/campana_service.dart';
+import '../features/notificaciones/widgets/campana_flotante.dart';
 
 /// Contenedor principal luego del login: muestra el sidebar y cambia
 /// de sección sin recargar toda la app (SPA-like), tanto en escritorio
@@ -94,6 +99,10 @@ class _HomeShellState extends State<HomeShell> {
         return const SodaScreen();
       case 'informe_gerente':
         return const InformeScreen();
+      case 'informes':
+        return const InformesScreen();
+      case 'compras':
+        return const ComprasScreen();
       case 'produccion':
         return ProduccionPlannerScreen(onIrAJarabes: _abrirJarabesConSabor);
       case 'historial':
@@ -125,6 +134,8 @@ class _HomeShellState extends State<HomeShell> {
     'mermas': 'Mermas',
     'soda_caustica': 'Soda Cáustica',
     'informe_gerente': 'Informe de Producción',
+    'informes': 'Informes',
+    'compras': 'Pedidos de compra',
     'produccion': 'Producción del día',
     'historial': 'Historial / Bitácora',
     'usuarios': 'Usuarios',
@@ -153,9 +164,19 @@ class _HomeShellState extends State<HomeShell> {
       ],
     );
 
+    // Campana flotante (abajo a la derecha, del lado contrario al menú): lo
+    // pendiente de cada persona. Vive mientras dure la sesión de este usuario.
+    Widget conCampana(Widget pantalla) => ChangeNotifierProvider(
+          key: ValueKey(usuario.id),
+          create: (_) => CampanaService(SupabaseCampanaRepository(), usuario)..iniciar(),
+          child: pantalla,
+        );
+    final campana = CampanaFlotante(onNavegar: _navegar);
+
     if (anchoAngosto) {
-      return Scaffold(
+      return conCampana(Scaffold(
         key: _scaffoldKey,
+        floatingActionButton: campana,
         backgroundColor: AppColors.fondo,
         drawer: Drawer(
           backgroundColor: const Color(0xFF17221D),
@@ -181,11 +202,12 @@ class _HomeShellState extends State<HomeShell> {
             ],
           ),
         ),
-      );
+      ));
     }
 
-    return Scaffold(
+    return conCampana(Scaffold(
       backgroundColor: AppColors.fondo,
+      floatingActionButton: campana,
       body: Column(
         children: [
           AppTopBar(onNavegar: _navegar),
@@ -200,6 +222,6 @@ class _HomeShellState extends State<HomeShell> {
           const AppFooter(),
         ],
       ),
-    );
+    ));
   }
 }

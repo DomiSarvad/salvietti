@@ -148,6 +148,34 @@ filtran por ítem con índice, no crecen con el total. (2) **Presencia**: `app_p
 `presencia_latido`/`presencia_salir`/`presencia_listar` (ver "Presencia de las áreas" más abajo).
 (3) Agrega `jarabes_preparados`/`jarabes_recetas` a `supabase_realtime`.
 
+→ v43 (pedidos de compra): `compras_pedidos` + `compras_pedido_lineas` (varias líneas por pedido),
+módulo `compras` (Almacén ver/crear, Gerente ver/aprobar, Jefe de Producción ver), toda escritura por
+`compras_crear_pedido(p_motivo, p_lineas jsonb)` / `compras_resolver` (rechazo exige respuesta) /
+`compras_anular` (solo quien lo hizo y pendiente). No mueve stock (eso es Recepciones). Agrega
+`compras_pedidos` y `solicitudes_gerencia` a `supabase_realtime` para la campana.
+
+### Gerente: Informes, campana y menú (2026-10-23)
+
+- **Menú**: `Rol.soloInformes` (`{gerente}`) + `Usuario.soloInformes`: el sidebar oculta las pantallas
+  de trabajo de cada área (Almacenes, Recepciones, Entregas, Compras, Solicitudes, Soplado, Jarabes…)
+  para esos roles. Es solo presentación: NO se le sacaron permisos `ver` (los informes leen esas
+  tablas y las políticas RLS los exigen), y las rutas siguen abriéndose desde la campana.
+- **Informes** (`features/informes/`): `InformesService.construir(area, rango)` arma KPIs + series +
+  tabla por área, solo con lo FINALIZADO; semana = barra por día (lun…dom), mes = barra por semana
+  (`RangoInforme`). Áreas: General (resume las demás), Jarabes, Soplado/Llenadora/Codificación
+  (`_corridas`, misma forma: producido vs merma, alerta > 3 %), Calidad, Producción terminada
+  (`salidas_planilla`), Mermas (`mermas_consolidado`), Almacén (cuenta movimientos, no unidades, +
+  pedidos de compra si hay v43), Soda Cáustica. `InformesExportService`: PDF (mismo estilo que el
+  reporte de inventario, con `pw.Chart` de barras) y Excel (números como números). Ítem "Informes"
+  del menú, con permiso `informe_produccion:ver`.
+- **Campana flotante** (`features/notificaciones/`, `CampanaFlotante` como `floatingActionButton`
+  de `HomeShell`, abajo a la derecha): `CampanaService` cuenta pendientes por rol (compras por
+  aprobar, solicitudes por resolver, recetas que esperan al Gerente / a Calidad / a Producción) y las
+  respuestas propias de los últimos 14 días no vistas (vistos por usuario en Hive `preferencias`).
+  Realtime sobre `compras_pedidos`/`solicitudes_gerencia`/`jarabes_recetas` + refresco cada 2 min.
+  Tocar una fila navega a la ruta donde se resuelve.
+- Tests: `compras_service_test`, `informes_service_test`, `informes_export_test`, `campana_service_test`.
+
 ### Presencia de las áreas y tiempo real en Jarabes/Soplado
 
 Problema real que lo motivó: si Soplado se queda sin internet y registra que se acabaron las
@@ -507,6 +535,26 @@ sin tocar ningún repositorio: `ClienteOffline` (`lib/services/cliente_offline.d
   funcionando). Una RPC nueva de solo lectura hay que sumarla a `_rpcLectura`, y una que deba exigir
   conexión a `_rpcSoloEnLinea` — si no, se trata como escritura y se encola.
 - Test: `test/cliente_offline_test.dart` (cliente HTTP falso, sin red real).
+- **Entrar sin internet** (`lib/services/sesion_offline.dart`): cada ingreso CON internet guarda
+  en Hive (`box_sesion`, clave `offline_<correo>`) una huella PBKDF2-SHA256 (20 000 iteraciones, sal
+  propia; nunca la contraseña) + la fila de `usuarios` + los permisos. Si `signInWithPassword`
+  falla por red, `AuthService._entrarSinConexion` verifica contra eso: vale 30 días desde el último
+  ingreso con internet en ESA compu; 5 errores seguidos bloquean 5 min (el bloqueo del servidor, v23,
+  no existe sin red). No hay sesión de Supabase: `ClienteOffline.usuarioSinConexion` hace que sus
+  lecturas usen SU copia y que lo que registre quede en la cola a su nombre. La contraseña queda
+  solo en memoria mientras tanto, para que `_reconectar` (al volver la red o cada 30 s) abra la
+  sesión real sola; si la contraseña cambió con internet, cierra sesión con `avisoLogin` (la cola
+  se conserva y se sube al volver a entrar). `recuperarSesion` (app reabierta con sesión) usa el
+  perfil guardado si no puede leerlo. Test: `test/sesion_offline_test.dart`.
+- **Datos personales sin internet**: la huella guarda también `datosCompletos` (lo que dijo el
+  servidor en el último ingreso). Al entrar sin internet, si es `false` se muestra igual
+  "Completá tus datos"; el `upsert` a `datos_empleado` va a la cola y `datosCompletados()` marca la
+  huella (`SesionOffline.marcarDatosCompletos`) para no volver a pedirlos.
+- **Cierre por ausencia** (`SesionInactividad`, `VigilanteSesion` en `main.dart`): se anota la última
+  actividad (cada minuto con sesión abierta y al pasar a segundo plano, en `box_sesion`). Al volver a
+  la app (`resumed`) o al abrirla (`recuperarSesion`), si pasó más de `limite` (1 h) se cierra la
+  sesión con `avisoLogin`. Sin registro previo no se da por vencida. El login muestra `avisoLogin`
+  escuchándolo en vivo (la revisión al abrir termina después de que el login ya se dibujó).
 
 ## Rendimiento (búsquedas y listas, 2026-10-15)
 
@@ -533,6 +581,21 @@ sin tocar ningún repositorio: `ClienteOffline` (`lib/services/cliente_offline.d
 - `ClienteOffline` guarda la copia de cada lectura en segundo plano (`unawaited`), sin demorar la
   respuesta. Recepciones carga recepciones y reclamos en paralelo.
 - Test: `test/busqueda_local_test.dart`.
+- **Historiales con `ListView.builder`** (Soplado, Llenadora, Codificación, Calidad, Jarabes,
+  Mermas, Soda Cáustica): el encabezado es el ítem 0 (sigue construyéndose entero, para el tour) y
+  cada tarjeta se crea recién al aparecer en pantalla. Antes era `ListView(children: [... for ...])`,
+  que creaba las ~200 tarjetas de entrada. Una lista nueva de datos va con `.builder`, nunca con
+  `children` + `for`.
+- **Arranque**: la caché sin conexión es una `LazyBox` (`box_cache_lecturas`, con las fechas en
+  `box_cache_fechas` para podar sin leer todo): antes Hive cargaba hasta 800 respuestas en memoria
+  al abrir la app. `_cargarPerfil` pide permisos y datos personales a la vez; el login ya no espera
+  la bitácora ni `intentos_login_registrar_exito` (y un error de la bitácora ya no se cuenta como
+  intento fallido de contraseña — era un bug).
+- **Memoria de catálogos en `ClienteOffline`** (`_catalogos`: almacenes, categorías, sabores,
+  presentaciones, matriz, módulos): 2 minutos en memoria. Muchas pantallas piden la lista de
+  almacenes ANTES que lo demás, así que era un viaje al servidor en serie en cada pantalla.
+  Cualquier escritura a esa tabla la borra (una RPC borra toda la memoria); `olvidarMemoria()` al
+  cerrar sesión. Lo que cambia OTRA persona en un catálogo tarda hasta 2 min en verse.
 
 ## Respaldos
 

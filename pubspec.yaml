@@ -22,6 +22,7 @@ dependencies:
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
   http: ^1.2.0 # cliente propio para Supabase (ClienteOffline)
+  crypto: ^3.0.3 # huella de la contraseña para entrar sin internet (SesionOffline)
 
   # Utilidades
   image_picker: ^1.1.2

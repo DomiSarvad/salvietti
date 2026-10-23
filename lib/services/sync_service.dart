@@ -106,7 +106,7 @@ class SyncService extends ChangeNotifier {
   /// vuelva a iniciar sesión acá (se registran a su nombre, no al de quien
   /// esté usando la app ahora).
   bool esDeOtroUsuario(OperacionOffline op) =>
-      op.usuario != SupabaseService.currentUser?.id;
+      op.usuario != (SupabaseService.currentUser?.id ?? ClienteOffline.usuarioSinConexion);
 
   Future<void> reintentar(OperacionOffline op) async {
     await ColaOffline.reintentar(op);

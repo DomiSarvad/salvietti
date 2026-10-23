@@ -1,3 +1,4 @@
+import '../core/constants.dart';
 import '../core/modulos.dart';
 
 class Usuario {
@@ -52,6 +53,10 @@ class Usuario {
 
   bool get esAlmacen => rol == 'almacen';
   bool get esGerente => rol == 'gerente';
+
+  /// Ve informes en vez de las pantallas de trabajo de cada área (ver
+  /// [Rol.soloInformes]).
+  bool get soloInformes => Rol.soloInformes.contains(rol);
   bool get esJefeProduccion => rol == 'jefe_produccion';
   bool get esJefeJarabes => rol == 'jarabes';
 

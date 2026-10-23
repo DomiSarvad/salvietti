@@ -5,9 +5,12 @@ import '../core/constants.dart';
 import '../models/usuario.dart';
 import 'supabase_service.dart';
 import 'bitacora_service.dart';
+import 'cliente_offline.dart';
 import 'datos_empleado_service.dart';
 import 'hive_service.dart';
 import 'permisos_service.dart';
+import 'sesion_inactividad.dart';
+import 'sesion_offline.dart';
 
 /// Resultado de un intento de inicio de sesión. Si [segundosEspera] no es
 /// null, hay un bloqueo temporal en curso: la pantalla arma su propia
@@ -41,14 +44,40 @@ class AuthService extends ChangeNotifier {
   /// Se llama al guardar los datos obligatorios.
   void datosCompletados() {
     _datosPendientes = false;
+    final id = _usuarioActual?.id;
+    if (id != null) unawaited(SesionOffline.marcarDatosCompletos(id).catchError((_) {}));
     notifyListeners();
   }
+
+  /// Lo que dijo el servidor en el último ingreso con internet: si ya cargó
+  /// sus datos personales (null = no se pudo consultar).
+  bool? _datosCompletosServidor;
 
   /// Foto elegida sin conexión, todavía no subida a Supabase Storage.
   /// Mientras exista, la UI la muestra en vez de `usuario.avatarUrl`
   /// (que sigue apuntando a la foto vieja hasta que se sincronice).
   Uint8List? _fotoLocalPendiente;
   Uint8List? get fotoLocalPendiente => _fotoLocalPendiente;
+
+  /// Entró SIN internet (con la huella guardada en esta compu, ver
+  /// [SesionOffline]): no hay sesión de Supabase. Lo que registra queda en la
+  /// cola a su nombre; cuando vuelve internet se reabre la sesión real sola
+  /// ([_reconectar]) y la cola se sube.
+  bool _sinConexion = false;
+  bool get sinConexion => _sinConexion;
+
+  /// Solo en memoria (nunca en disco), y solo mientras dura el ingreso sin
+  /// internet: hace falta para abrir la sesión real cuando vuelva la conexión.
+  String? _correoPendiente;
+  String? _clavePendiente;
+  Timer? _reintentoSesion;
+
+  /// Mensaje para mostrar en el login (ej. por qué se cerró la sesión).
+  String? avisoLogin;
+
+  /// La fila de `usuarios` tal como vino del servidor, para guardarla junto
+  /// con la huella (y poder armar el perfil sin internet).
+  Map<String, dynamic>? _perfilCrudo;
 
   /// Valida formato antes de tocar la red: largo excesivo, símbolos
   /// inválidos en el correo, contraseña vacía o con caracteres de control.
@@ -117,6 +146,7 @@ class AuthService extends ChangeNotifier {
 
   Future<ResultadoLogin> iniciarSesion(String email, String password) async {
     final correo = email.trim().toLowerCase();
+    avisoLogin = null; // el aviso de por qué se cerró la sesión ya se vio
 
     final errorFormato = _validarCredenciales(correo, password);
     if (errorFormato != null) return ResultadoLogin(error: errorFormato);
@@ -141,23 +171,136 @@ class AuthService extends ChangeNotifier {
         return const ResultadoLogin(
             error: 'Tu cuenta está desactivada. Comunicate con el Gerente.');
       }
-      await BitacoraService.registrarAccion(
+      unawaited(SesionInactividad.registrarActividad().catchError((_) {}));
+      // Para poder entrar sin internet la próxima vez, en esta compu.
+      final crudo = _perfilCrudo;
+      if (crudo != null) {
+        unawaited(SesionOffline.recordar(
+          correo: correo,
+          password: password,
+          perfil: crudo,
+          permisos: _usuarioActual?.permisos,
+          datosCompletos: _datosCompletosServidor,
+        ).catchError((_) {}));
+      }
+      // Las dos en segundo plano: no hace falta esperarlas para mostrar el
+      // menú. Y si fallan no es un intento de contraseña fallido (antes un
+      // error de la bitácora caía en el catch de abajo y se contaba como tal).
+      unawaited(BitacoraService.registrarAccion(
         usuarioId: res.user!.id,
         accion: 'login',
-      );
-      try {
-        await SupabaseService.client
-            .rpc('intentos_login_registrar_exito', params: {'p_email': correo})
-            .timeout(SupabaseService.timeoutRed);
-      } catch (_) {
-        // No es crítico: si falla, el próximo ingreso correcto lo limpia igual.
-      }
+      ).catchError((_) {}));
+      // No es crítico: si falla, el próximo ingreso correcto lo limpia igual.
+      unawaited(SupabaseService.client
+          .rpc('intentos_login_registrar_exito', params: {'p_email': correo})
+          .timeout(SupabaseService.timeoutRed)
+          .then((_) {}, onError: (_) {}));
       return const ResultadoLogin(); // sin error
     } on Object catch (e) {
       final mensaje = _mensajeError(e);
-      // Un problema de red no es un intento fallido de contraseña.
-      if (mensaje.startsWith('No se pudo conectar')) return ResultadoLogin(error: mensaje);
+      // Sin internet: se intenta con la huella guardada en esta compu. Un
+      // problema de red no es un intento fallido de contraseña en el servidor.
+      if (mensaje.startsWith('No se pudo conectar')) return _entrarSinConexion(correo, password);
       return await _registrarFallo(correo, mensaje);
+    }
+  }
+
+  Future<ResultadoLogin> _entrarSinConexion(String correo, String password) async {
+    try {
+      final guardado = await SesionOffline.verificar(correo, password);
+      final usuario = Usuario.fromMap(guardado.perfil).conPermisos(guardado.permisos);
+      if (!usuario.activo) {
+        return const ResultadoLogin(
+            error: 'Tu cuenta está desactivada. Comunicate con el Gerente.');
+      }
+      _usuarioActual = usuario;
+      // Primera vez sin haber cargado sus datos: se le piden igual (se guardan
+      // en la compu y se suben con la cola cuando vuelva internet).
+      _datosPendientes = guardado.datosCompletos == false;
+      _sinConexion = true;
+      _correoPendiente = correo;
+      _clavePendiente = password;
+      ClienteOffline.usuarioSinConexion = usuario.id;
+      unawaited(SesionInactividad.registrarActividad().catchError((_) {}));
+      _restaurarFotoPendienteLocal();
+      _esperarConexion();
+      notifyListeners();
+      return const ResultadoLogin();
+    } on ErrorSesionOffline catch (e) {
+      return ResultadoLogin(error: e.mensaje);
+    }
+  }
+
+  /// Mientras se trabaja sin internet: apenas vuelve la red (o cada 30 s, por
+  /// si el wifi volvió sin que nadie avise) se abre la sesión real.
+  void _esperarConexion() {
+    ClienteOffline.hayRed.removeListener(_alVolverRed);
+    ClienteOffline.hayRed.addListener(_alVolverRed);
+    _reintentoSesion?.cancel();
+    _reintentoSesion = Timer.periodic(const Duration(seconds: 30), (_) => _reconectar());
+  }
+
+  void _alVolverRed() {
+    if (ClienteOffline.hayRed.value) _reconectar();
+  }
+
+  void _dejarDeEsperar() {
+    ClienteOffline.hayRed.removeListener(_alVolverRed);
+    _reintentoSesion?.cancel();
+    _reintentoSesion = null;
+    _correoPendiente = null;
+    _clavePendiente = null;
+    ClienteOffline.usuarioSinConexion = null;
+  }
+
+  bool _reconectando = false;
+
+  Future<void> _reconectar() async {
+    final correo = _correoPendiente, clave = _clavePendiente;
+    if (!_sinConexion || _reconectando || correo == null || clave == null) return;
+    _reconectando = true;
+    try {
+      final res = await SupabaseService.client.auth
+          .signInWithPassword(email: correo, password: clave)
+          .timeout(SupabaseService.timeoutRed);
+      final id = res.user?.id;
+      if (id == null) return;
+      _sinConexion = false;
+      _dejarDeEsperar();
+      try {
+        await _cargarPerfil(id);
+      } catch (_) {
+        // Se queda con el perfil guardado; se refresca en el próximo ingreso.
+      }
+      final crudo = _perfilCrudo;
+      if (crudo != null) {
+        unawaited(SesionOffline.recordar(
+                correo: correo,
+                password: clave,
+                perfil: crudo,
+                permisos: _usuarioActual?.permisos,
+                datosCompletos: _datosCompletosServidor)
+            .catchError((_) {}));
+      }
+      if (_usuarioActual != null && !_usuarioActual!.activo) {
+        avisoLogin = 'Tu cuenta fue desactivada. Comunicate con el Gerente.';
+        await cerrarSesion();
+        return;
+      }
+      notifyListeners(); // la sincronización sube la cola sola en su próximo intento
+    } on AuthException catch (e) {
+      // La contraseña ya no es esa (la cambiaron con internet): hay que volver
+      // a entrar. Lo registrado sin internet NO se pierde: queda en la cola y
+      // se sube cuando esta persona vuelva a entrar con la contraseña nueva.
+      if (e.message.contains('Invalid login credentials')) {
+        avisoLogin = 'Tu contraseña cambió mientras estabas sin internet. Entrá con la nueva: '
+            'lo que registraste sin conexión se sube después de entrar.';
+        await cerrarSesion();
+      }
+    } catch (_) {
+      // Sigue sin internet: se reintenta más tarde.
+    } finally {
+      _reconectando = false;
     }
   }
 
@@ -167,16 +310,20 @@ class AuthService extends ChangeNotifier {
         .select()
         .eq('id', userId)
         .single();
+    _perfilCrudo = Map<String, dynamic>.from(data);
     final perfil = Usuario.fromMap(data);
-    _usuarioActual = perfil.conPermisos(await PermisosService.delRol(perfil.rol));
+    // Permisos y datos personales a la vez (antes iban uno después del otro,
+    // y el menú no aparecía hasta que terminaban los dos).
     // ¿Completó sus datos personales? Si no se puede consultar (sin conexión, o
     // la tabla todavía no existe) no se bloquea el ingreso.
-    try {
-      final datos = await DatosEmpleadoService.obtener(userId);
-      _datosPendientes = _usuarioActual!.activo && !(datos?.completo ?? false);
-    } catch (_) {
-      _datosPendientes = false;
-    }
+    final datosFuturo = DatosEmpleadoService.obtener(userId)
+        .then<bool?>((d) => d?.completo ?? false)
+        .catchError((_) => null);
+    final permisos = await PermisosService.delRol(perfil.rol);
+    _usuarioActual = perfil.conPermisos(permisos);
+    final completo = await datosFuturo;
+    _datosCompletosServidor = completo;
+    _datosPendientes = completo != null && _usuarioActual!.activo && !completo;
     _restaurarFotoPendienteLocal();
     notifyListeners();
   }
@@ -192,8 +339,31 @@ class AuthService extends ChangeNotifier {
 
   Future<void> recuperarSesion() async {
     final user = SupabaseService.currentUser;
+    if (user != null && SesionInactividad.vencida()) {
+      // Se salió sin cerrar sesión y pasó demasiado tiempo: a ingresar de nuevo.
+      avisoLogin = SesionInactividad.mensaje;
+      try {
+        await SupabaseService.client.auth.signOut();
+      } catch (_) {
+        // Sin internet puede fallar; da igual: la próxima vez que se abra la
+        // app, la última actividad sigue vieja y se vuelve a cerrar acá.
+      }
+      notifyListeners();
+      return;
+    }
     if (user != null) {
-      await _cargarPerfil(user.id);
+      try {
+        await _cargarPerfil(user.id);
+      } catch (_) {
+        // Sin internet y sin copia de esa consulta: se usa el perfil guardado
+        // en el último ingreso con internet en esta compu (si lo hay).
+        final guardado = SesionOffline.perfilDe(user.id);
+        if (guardado == null) return; // muestra el login
+        _usuarioActual = Usuario.fromMap(guardado.perfil).conPermisos(guardado.permisos);
+        _datosPendientes = guardado.datosCompletos == false;
+        _restaurarFotoPendienteLocal();
+        notifyListeners();
+      }
       if (_usuarioActual != null && !_usuarioActual!.activo) {
         await SupabaseService.client.auth.signOut();
         _usuarioActual = null;
@@ -368,12 +538,23 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// La app estuvo sin usarse más de [SesionInactividad.limite]: se cierra la
+  /// sesión con un aviso. Lo registrado sin internet sigue en la cola.
+  Future<void> cerrarPorInactividad() async {
+    avisoLogin = SesionInactividad.mensaje;
+    await cerrarSesion();
+  }
+
   Future<void> cerrarSesion() async {
     if (_usuarioActual != null) {
-      await BitacoraService.registrarAccion(
-        usuarioId: _usuarioActual!.id,
-        accion: 'logout',
-      );
+      try {
+        await BitacoraService.registrarAccion(
+          usuarioId: _usuarioActual!.id,
+          accion: 'logout',
+        );
+      } catch (_) {
+        // No impide cerrar la sesión.
+      }
     }
     // Que las demás áreas no lo vean como "sin señal": cerró a propósito.
     try {
@@ -381,7 +562,14 @@ class AuthService extends ChangeNotifier {
     } catch (_) {
       // Sin internet o sin v42: no impide cerrar la sesión.
     }
-    await SupabaseService.client.auth.signOut();
+    ClienteOffline.olvidarMemoria(); // catálogos en memoria del usuario que sale
+    _sinConexion = false;
+    _dejarDeEsperar();
+    try {
+      await SupabaseService.client.auth.signOut();
+    } catch (_) {
+      // Sin internet: la sesión se borra de esta compu igual.
+    }
     _usuarioActual = null;
     _datosPendientes = false;
     notifyListeners();

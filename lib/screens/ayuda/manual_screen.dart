@@ -104,6 +104,44 @@ const _entradas = <_EntradaManual>[
     puntos: [
       'Para faltantes de suministro, autorizaciones o cambios de receta.',
       'Gerencia tiene una sola bandeja para aprobar o rechazar todo.',
+      'También se puede mandar desde la campana (abajo a la derecha): "Nueva solicitud o pregunta".',
+    ],
+  ),
+  _EntradaManual(
+    titulo: 'Pedidos de compra',
+    icono: Icons.shopping_cart_outlined,
+    resumen: 'Almacén pide permiso al Gerente para comprar a proveedores.',
+    puntos: [
+      'Un pedido puede tener varios ítems, cada uno con su cantidad y una nota.',
+      'El Gerente lo aprueba o lo rechaza entero (si lo rechaza, explica por qué). '
+          'La respuesta llega a la campana de quien lo pidió.',
+      'Mientras está pendiente, quien lo hizo lo puede anular.',
+      'No mueve el stock: el stock entra cuando llega la mercadería, en Recepciones.',
+    ],
+  ),
+  _EntradaManual(
+    titulo: 'Campana de notificaciones',
+    icono: Icons.notifications_rounded,
+    resumen: 'El botón redondo de abajo a la derecha: lo que tenés pendiente.',
+    puntos: [
+      'El número rojo es cuántas cosas te esperan. Tocá la campana para ver cuáles y '
+          'tocá una para ir directo a resolverla.',
+      'Gerente: pedidos de compra, solicitudes y recetas por confirmar.',
+      'Resto del personal: las respuestas a lo que mandaste (aprobado o rechazado).',
+      'Se actualiza sola, sin tener que refrescar.',
+    ],
+  ),
+  _EntradaManual(
+    titulo: 'Informes (Gerente)',
+    icono: Icons.insights_outlined,
+    resumen: 'Resultados de cada área por semana o por mes, con gráficos.',
+    puntos: [
+      '"General" resume todo; cada área (Jarabes, Soplado, Llenadora, Calidad, Mermas, '
+          'Almacén…) muestra sus resultados en detalle.',
+      'Semanal: una barra por día. Mensual: una barra por semana. Con las flechas se ven '
+          'períodos anteriores.',
+      'Solo cuenta lo terminado (las corridas en curso o anuladas no entran).',
+      'Los botones PDF y Excel descargan exactamente el informe que estás viendo.',
     ],
   ),
   _EntradaManual(
@@ -209,6 +247,13 @@ const _entradas = <_EntradaManual>[
           '(aparece el aviso "Sin internet: se guardó en esta compu") y se sube solo cuando '
           'vuelve la conexión. Lo que ves en pantalla mientras tanto es lo de la última vez '
           'que hubo internet.',
+      'También se puede ENTRAR sin internet, con tu correo y contraseña de siempre, si ya '
+          'entraste al menos una vez con internet en esa misma compu en los últimos 30 días. '
+          'Cuando vuelve la conexión, la app termina de conectarse sola y sube lo que '
+          'registraste. Si es tu primera vez, te pide tus datos personales igual: se guardan '
+          'en la compu y se suben con lo demás.',
+      'Si te vas sin cerrar sesión y la app queda más de 1 hora sin usarse, al volver te pide '
+          'ingresar de nuevo (las compus se comparten). Lo que habías registrado no se pierde.',
       'Si otra área está sin internet, aparece un aviso amarillo (por ejemplo, en Jarabes: '
           '"Soplado: sin señal desde las 10:32"). Quiere decir que lo que esa área registró '
           'desde entonces todavía no se ve: confirmá con ella antes de decidir con esos datos. '

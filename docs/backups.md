@@ -42,7 +42,21 @@ terminar en verde y dejar un archivo `salvietti_respaldo_AAAA-MM-DD` abajo, en
 1. Descargar el respaldo: **Actions** → elegir la ejecución del día →
    "Artifacts" → descargar y descomprimir el `.zip`. Queda un archivo
    `salvietti_respaldo_AAAA-MM-DD.tar.gz.enc`.
-2. Descifrarlo (en Git Bash, Linux o Mac):
+2. Descifrarlo. **Lo más fácil**: abrir Git Bash en la carpeta del `.enc` y
+   correr el script, que pide la contraseña (sin comillas ni comandos) y lo
+   abre en una carpeta con el mismo nombre:
+
+   ```bash
+   bash ~/ruta/al/proyecto/scripts/backup/abrir_respaldo.sh
+   ```
+
+   Se cifra con la contraseña SIN espacios ni saltos de línea en los bordes
+   (se quitan solos), y el registro de cada respaldo en Actions ("Comprimir y
+   cifrar") dice cuántos caracteres tenía: si no abre, comparar con eso.
+   **Ojo**: cambiar el secreto `BACKUP_PASSWORD` no cambia los respaldos ya
+   hechos; esos siguen abriéndose solo con la contraseña de ese momento.
+
+   A mano, sin el script (Linux, Mac o Git Bash):
 
    ```bash
    export BACKUP_PASSWORD='la contraseña'

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/filas_sin_subir.dart';
 import '../models/codificacion_modelos.dart';
 
 /// Acceso a datos de Codificación. Las escrituras pasan por funciones del
@@ -96,7 +97,29 @@ class SupabaseCodificacionRepository implements CodificacionRepository {
         .order('hora_inicio', ascending: false)
         .limit(limite)
         .timeout(SupabaseService.timeoutRed);
-    return [for (final f in filas) CorridaCodificacion.fromMap(f)];
+    return [...await _sinSubir(), for (final f in filas) CorridaCodificacion.fromMap(f)];
+  }
+
+  /// Corridas iniciadas sin internet que siguen en la cola (ver filasSinSubir).
+  Future<List<CorridaCodificacion>> _sinSubir() async {
+    final filas = filasSinSubir('codificacion_iniciar_corrida',
+        cierran: const ['codificacion_finalizar_corrida', 'codificacion_anular_corrida']);
+    if (filas.isEmpty) return const [];
+    var sab = <int, String>{}, pre = <int, String>{};
+    try {
+      sab = {for (final s in await sabores()) s.id: s.nombre};
+      pre = {for (final p in await presentaciones()) p.id: p.nombre};
+    } catch (_) {
+      // Sin copia de los catálogos: la tarjeta sale sin nombres, pero sale.
+    }
+    return [
+      for (final f in filas)
+        CorridaCodificacion.fromMap({
+          ...f,
+          'sabores': {'nombre': sab[f['sabor_id']]},
+          'presentaciones': {'nombre': pre[f['presentacion_id']]},
+        }),
+    ];
   }
 
   @override

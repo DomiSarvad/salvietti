@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -12,6 +13,7 @@ import '../widgets/conformidad_dialog.dart';
 import '../widgets/devolucion_dialog.dart';
 import '../widgets/motivo_dialog.dart';
 import '../widgets/pedido_form_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Bandeja de pedidos internos: por entregar, por confirmar, con
 /// observaciones y cerrados. Solo UI; las reglas viven en el service.
@@ -24,7 +26,10 @@ class EntregasScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) =>
           EntregasService(SupabaseEntregasRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<EntregasService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -40,8 +45,7 @@ class _VistaState extends State<_Vista> {
   final _pasoBandejas = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Bandejas',
-    texto: 'Pendientes (nadie entregó todavía), Entregados (a confirmar), Observados '
-        '(faltó algo) y Cerrados. El número entre paréntesis es cuántos hay en cada una.',
+    texto: 'Pedidos por estado; el número es cuántos hay.',
   );
 
   @override
@@ -84,7 +88,7 @@ class _VistaState extends State<_Vista> {
       );
     }
 
-    final items = svc.visibles;
+    final items = svc.visiblesFiltrados;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -137,11 +141,24 @@ class _VistaState extends State<_Vista> {
             ),
           ),
         ),
+        // Buscador: texto, Desde/Hasta, y PDF/Excel de lo filtrado (dentro de la
+        // bandeja elegida).
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: BarraFiltros(
+            filtro: svc.filtro,
+            onCambio: svc.filtrar,
+            reporte: svc.reporte,
+            hint: 'Buscar por área, almacén, solicitante, N°…',
+          ),
+        ),
         Expanded(
           child: items.isEmpty
-              ? const Center(
-                  child: Text('No hay pedidos en esta bandeja.',
-                      style: TextStyle(color: Colors.black54)))
+              ? (svc.filtro.activo
+                  ? const SinResultados()
+                  : const Center(
+                      child: Text('No hay pedidos en esta bandeja.',
+                          style: TextStyle(color: Colors.black54))))
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: items.length,

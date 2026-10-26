@@ -15,7 +15,12 @@ class InformesExportService {
   static const _dorado = PdfColor.fromInt(0xFFC99A2E);
   static const _gris = PdfColors.grey700;
 
-  static String _nombre(InformeArea i) => 'Informe ${i.area.titulo} ${i.rango.titulo}';
+  static String _nombre(InformeArea i) =>
+      'Informe ${i.area.titulo} ${i.rango.titulo}${i.busqueda.isEmpty ? '' : ' - ${i.busqueda}'}';
+
+  /// Período y, si se filtró, con qué texto (lo impreso es solo eso).
+  static String _subtitulo(InformeArea i) => '${i.rango.periodo.etiqueta}: ${i.rango.titulo}'
+      '${i.busqueda.isEmpty ? '' : '   ·   Búsqueda: "${i.busqueda}"'}';
 
   // ------------------------------------------------------------------ PDF
 
@@ -48,7 +53,7 @@ class InformesExportService {
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
               pw.Text('INFORME · ${i.area.titulo.toUpperCase()}',
                   style: pw.TextStyle(fontSize: 17, fontWeight: pw.FontWeight.bold, color: _verde)),
-              pw.Text('${i.rango.periodo.etiqueta}: ${i.rango.titulo}',
+              pw.Text(_subtitulo(i),
                   style: const pw.TextStyle(fontSize: 10, color: _gris)),
             ]),
           ),
@@ -104,8 +109,8 @@ class InformesExportService {
                   pw.BarDataSet(
                     color: colores[s % colores.length],
                     legend: i.series[s].nombre,
-                    width: 14,
-                    offset: (s - (i.series.length - 1) / 2) * 15,
+                    width: _anchoBarra(i),
+                    offset: (s - (i.series.length - 1) / 2) * (_anchoBarra(i) + 1),
                     data: [
                       for (var b = 0; b < i.series[s].valores.length; b++)
                         pw.PointChartValue(b.toDouble(), i.series[s].valores[b]),
@@ -126,6 +131,28 @@ class InformesExportService {
                 ]),
             ]),
           ),
+        if (i.tieneProyeccion) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Proyección al cierre del período (al ritmo promedio por día de lo que va): '
+            '${i.series.map((s) => '${s.nombre} ${fmtNum(s.totalProyectado, decimales: 0)} '
+                '(van ${fmtNum(s.total, decimales: 0)})').join(' · ')}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+        ],
+        if (i.anteriores != null) ...[
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Comparado con ${i.tituloAnterior}'
+            '${i.barrasHastaHoy != null ? ' (hasta ${i.rango.etiquetas[i.barrasVisibles - 1]})' : ''}: '
+            '${[
+              for (var s = 0; s < i.series.length && s < i.anteriores!.length; s++)
+                '${i.series[s].nombre} ${fmtNum(InformeArea.sumaHasta(i.series[s], i.barrasVisibles), decimales: 0)}'
+                    ' (antes ${fmtNum(InformeArea.sumaHasta(i.anteriores![s], i.barrasVisibles), decimales: 0)})'
+            ].join(' · ')}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+        ],
         pw.SizedBox(height: 14),
 
         // Tabla
@@ -151,6 +178,12 @@ class InformesExportService {
       ],
     ));
     return doc.save();
+  }
+
+  /// Más angostas cuantas más barras (un año o un rango de 31 días).
+  static double _anchoBarra(InformeArea i) {
+    final n = i.rango.etiquetas.length * i.series.length;
+    return n > 24 ? 5 : n > 12 ? 9 : 14;
   }
 
   /// Marcas "redondas" del eje Y hasta un poco más que el máximo.
@@ -201,7 +234,7 @@ class InformesExportService {
 
     celda(0, 'Informe · ${i.area.titulo}', titulo);
     fila++;
-    celda(0, '${i.rango.periodo.etiqueta}: ${i.rango.titulo}');
+    celda(0, _subtitulo(i));
     fila++;
     celda(0, 'Emitido: ${fmtFechaHora(DateTime.now())} · Por: $responsable');
     fila += 2;
@@ -220,15 +253,33 @@ class InformesExportService {
     // puedan graficar o sumar en Excel.
     celda(0, i.tituloGrafico, negrita);
     fila++;
-    celda(0, i.rango.periodo == PeriodoInforme.semana ? 'Día' : 'Semana', cabecera);
+    // Cada serie lleva al lado su columna de estimado (si hay proyección) y la
+    // del período anterior (si se está comparando).
+    final ant = i.anteriores;
+    final colEst = i.tieneProyeccion ? 1 : 0;
+    final cols = 1 + colEst + (ant != null ? 1 : 0);
+    celda(0, i.rango.unidadBarra, cabecera);
     for (var s = 0; s < i.series.length; s++) {
-      celda(s + 1, i.series[s].nombre, cabecera);
+      celda(s * cols + 1, i.series[s].nombre, cabecera);
+      if (i.tieneProyeccion) celda(s * cols + 2, '${i.series[s].nombre} (estimado)', cabecera);
+      if (ant != null) {
+        celda(s * cols + 2 + colEst, '${i.series[s].nombre} (${i.tituloAnterior})', cabecera);
+      }
     }
     fila++;
     for (var b = 0; b < i.rango.etiquetas.length; b++) {
       celda(0, i.rango.etiquetas[b]);
       for (var s = 0; s < i.series.length; s++) {
-        celda(s + 1, i.series[s].valores[b]);
+        celda(s * cols + 1, i.series[s].valores[b]);
+        if (i.tieneProyeccion) celda(s * cols + 2, i.series[s].proyeccion![b].roundToDouble());
+        if (ant != null && s < ant.length) celda(s * cols + 2 + colEst, ant[s].valores[b]);
+      }
+      fila++;
+    }
+    if (i.tieneProyeccion) {
+      celda(0, 'Proyección al cierre', negrita);
+      for (var s = 0; s < i.series.length; s++) {
+        celda(s * cols + 1, i.series[s].totalProyectado!.roundToDouble(), negrita);
       }
       fila++;
     }

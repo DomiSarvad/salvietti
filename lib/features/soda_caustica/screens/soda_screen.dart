@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -10,6 +11,7 @@ import '../repositories/soda_repository.dart';
 import '../services/soda_pdf_service.dart';
 import '../services/soda_service.dart';
 import '../widgets/registrar_entrega_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Soda Cáustica: historial de entregas, con su constancia en PDF (producto
 /// peligroso). El stock se ve en Almacenes, como el de cualquier otro
@@ -23,7 +25,10 @@ class SodaScreen extends StatelessWidget {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => SodaService(SupabaseSodaRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<SodaService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -39,13 +44,12 @@ class _VistaState extends State<_Vista> {
   final _pasoInfo = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Stock vs. entregas',
-    texto: 'El stock que llega de Almacén se ve en "Almacenes", como el de cualquier '
-        'otro almacén. Acá solo se registra a quién se le entrega, para la constancia.',
+    texto: 'El stock está en Almacenes; acá, a quién se entrega.',
   );
   final _pasoRegistrar = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Registrar entrega',
-    texto: 'Por ser un producto peligroso, cada entrega genera una constancia en PDF.',
+    texto: 'Cada entrega genera su constancia en PDF.',
   );
 
   @override
@@ -105,13 +109,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.entregas;
+    final lista = svc.entregasFiltradas;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(context, svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(context, svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por ítem, a quién se entregó, área…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(

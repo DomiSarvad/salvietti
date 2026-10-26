@@ -134,6 +134,9 @@ class CorridaLlenadora {
   });
 
   Duration? get duracion => horaFin?.difference(horaInicio);
+
+  /// Iniciado sin internet y todavía en la cola (id provisorio negativo).
+  bool get sinSubir => id < 0;
   bool get tieneMerma => botellasDesechadas > 0 || tapasDesechadas > 0 || rebalse > 0;
   double? get botellasBuenas =>
       botellasLlenadas == null ? null : botellasLlenadas! - botellasDesechadas;

@@ -103,16 +103,17 @@ class AuthService extends ChangeNotifier {
   /// y protege igual si prueban desde otro dispositivo. 5 fallos bloquean
   /// 30s, 10 fallos 2min, 15 fallos 10min, 20 fallos 30min, 25 fallos
   /// bloquean la cuenta hasta que el Gerente la desbloquee.
-  Future<Map<String, dynamic>?> _estadoBloqueo(String correo) async {
+  /// [sinRed]: la consulta falló por falta de conexión (no por otra cosa).
+  Future<({Map<String, dynamic>? estado, bool sinRed})> _estadoBloqueo(String correo) async {
     try {
       final r = await SupabaseService.client
           .rpc('intentos_login_estado', params: {'p_email': correo})
           .timeout(SupabaseService.timeoutRed);
-      return Map<String, dynamic>.from(r as Map);
-    } catch (_) {
+      return (estado: Map<String, dynamic>.from(r as Map), sinRed: false);
+    } catch (e) {
       // Sin la migración v23 o sin conexión: no se bloquea el ingreso por
       // esto, el error real (si lo hay) lo va a dar signInWithPassword.
-      return null;
+      return (estado: null, sinRed: ClienteOffline.esFallaDeRed(e));
     }
   }
 
@@ -151,7 +152,12 @@ class AuthService extends ChangeNotifier {
     final errorFormato = _validarCredenciales(correo, password);
     if (errorFormato != null) return ResultadoLogin(error: errorFormato);
 
-    final estadoPrevio = await _estadoBloqueo(correo);
+    // Sin ninguna red, o si la primera consulta ya falló por conexión, se entra
+    // directo con la huella guardada en esta compu: antes se esperaba también
+    // a que fallara el ingreso (8 s + 8 s con wifi sin salida a internet).
+    if (ClienteOffline.sinInterfaz) return _entrarSinConexion(correo, password);
+    final (estado: estadoPrevio, sinRed: sinRed) = await _estadoBloqueo(correo);
+    if (sinRed) return _entrarSinConexion(correo, password);
     if (estadoPrevio != null && estadoPrevio['permitido'] == false) {
       return _resultadoBloqueo(estadoPrevio);
     }

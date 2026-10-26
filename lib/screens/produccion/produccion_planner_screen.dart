@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/produccion.dart';
+import '../../models/usuario.dart';
 import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
+import '../../services/sync_service.dart';
 import '../../shared/ayuda/tour_ayuda.dart';
 import '../../utils/formatters.dart';
 import 'constructor_plan_dialog.dart';
@@ -37,30 +40,51 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
   final _pasoArmarPlan = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Armar plan',
-    texto: 'El Jefe de Producción arma acá la tabla del día: qué productos y cuántos '
-        'litros planificados. Al guardar, pasan a la lista de tareas de abajo.',
+    texto: 'Cargá los productos del día y compartí la foto.',
   );
   final _pasoLista = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Marcar como completado',
-    texto: 'Tocá "Marcar hecho" cuando termine de embotellarse un producto: el sistema '
-        'descuenta automáticamente materia prima, preformas y tapas según la receta y '
-        'las botellas producidas.',
+    texto: 'Tocá "Marcar hecho" al terminar cada producto.',
   );
+  // Para quien solo mira el plan (Gerente, las áreas): no tilda nada.
+  final _pasoListaVer = PasoAyuda(
+    clave: GlobalKey(),
+    titulo: 'Plan de hoy',
+    texto: 'Qué se produce hoy y qué ya se terminó.',
+  );
+
+  StreamSubscription<void>? _alVolverRed;
+
+  bool get _editor => context.read<AuthService>().usuarioActual?.puedeEditarProduccion ?? false;
+  PasoAyuda get _pasoListaActual => _editor ? _pasoLista : _pasoListaVer;
 
   @override
   void initState() {
     super.initState();
-    _cargar();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        TourAyuda.mostrar(context,
-            idTour: 'produccion_del_dia', soloSiNoVisto: true, pasos: _pasosAyuda());
-      }
+    // El tour recién después de cargar: mientras carga solo hay un spinner y
+    // sus pasos no estarían montados (mismo caso que Jarabes).
+    _cargar().then((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          TourAyuda.mostrar(context,
+              idTour: 'produccion_del_dia', soloSiNoVisto: true, pasos: _pasosAyuda());
+        }
+      });
+    });
+    // Volvió internet o se subió la cola: lo que se ve puede ser la copia vieja.
+    _alVolverRed = context.read<SyncService>().alHaberDatosNuevos.listen((_) {
+      if (mounted && !_cargando) _cargar();
     });
   }
 
-  List<PasoAyuda> _pasosAyuda() => [_pasoArmarPlan, _pasoLista];
+  @override
+  void dispose() {
+    _alVolverRed?.cancel();
+    super.dispose();
+  }
+
+  List<PasoAyuda> _pasosAyuda() => [if (_editor) _pasoArmarPlan, _pasoListaActual];
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
@@ -96,7 +120,11 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
       builder: (_) =>
           ConstructorPlanDialog(planId: _plan!.id, productos: _productos),
     );
-    if (guardado == true) _cargar();
+    if (guardado != true) return;
+    // Lo de siempre después de armar el plan: mandarlo por WhatsApp a planta.
+    // Se abre solo, con el plan ya recargado (la foto sale de lo guardado).
+    await _cargar();
+    if (mounted && _plan != null && _plan!.detalle.isNotEmpty) await _guardarImagen();
   }
 
   /// Si [d] ya está completado (por ejemplo, porque Jarabes lo marcó solo
@@ -222,11 +250,14 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
 
     if (_cargando) return const Center(child: CircularProgressIndicator());
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final angosto = MediaQuery.sizeOf(context).width < 600;
+    // Toda la pantalla se desplaza (antes el encabezado quedaba fijo y en un
+    // celular la lista se reducía a una franja de pocos píxeles). La lista del
+    // día es corta, así que una lista común (no .builder) alcanza, y así el
+    // tour encuentra todo montado.
+    return ListView(
+      padding: EdgeInsets.all(angosto ? 16 : 24),
+      children: [
           Row(
             children: [
               const Expanded(
@@ -237,26 +268,29 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          // Wrap en vez de Row: con varios botones, en una ventana angosta
-          // un Row fijo se desborda; acá simplemente pasan a la siguiente
-          // línea.
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _plan == null || _plan!.detalle.isEmpty
-                    ? null
-                    : _guardarImagen,
-                icon: const Icon(Icons.share_outlined),
-                label: const Text('Compartir'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _copiarResumen,
-                icon: const Icon(Icons.copy_all_outlined),
-                label: const Text('Copiar resumen'),
-              ),
-              if (usuario.puedeEditarProduccion) ...[
+          // Quien no arma el plan (Gerente, las áreas) solo lo mira: no ve
+          // botones. Compartir/Copiar resumen son para mandarlo a planta por
+          // WhatsApp, y eso lo hace el Jefe de Producción.
+          if (usuario.puedeEditarProduccion)
+            // Wrap en vez de Row: con varios botones, en una ventana angosta
+            // un Row fijo se desborda; acá simplemente pasan a la siguiente
+            // línea.
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _plan == null || _plan!.detalle.isEmpty
+                      ? null
+                      : _guardarImagen,
+                  icon: const Icon(Icons.share_outlined),
+                  label: const Text('Compartir'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _copiarResumen,
+                  icon: const Icon(Icons.copy_all_outlined),
+                  label: const Text('Copiar resumen'),
+                ),
                 OutlinedButton.icon(
                   onPressed: _abrirCatalogo,
                   icon: const Icon(Icons.list_alt_outlined),
@@ -277,83 +311,119 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                   ),
                 ),
               ],
-            ],
-          ),
+            ),
           const SizedBox(height: 4),
           Text(
-              'Marca cada producto cuando termine de embotellarse: el sistema '
-              'descuenta automáticamente materia prima, preformas y tapas '
-              'según la receta y las botellas producidas.',
+              usuario.puedeEditarProduccion
+                  ? 'Marca cada producto cuando termine de embotellarse: el sistema '
+                      'descuenta automáticamente materia prima, preformas y tapas '
+                      'según la receta y las botellas producidas.'
+                  : 'Lo que se va a producir hoy. El Jefe de Producción lo va marcando '
+                      'a medida que se termina.',
               style: TextStyle(color: Colors.grey.shade600)),
-          if (widget.onIrAJarabes != null) ...[
+          if (_irAJarabes(usuario) != null) ...[
             const SizedBox(height: 4),
             Text('Tocá el ícono de gota, o el producto, para ir a Jarabes con '
                 'ese sabor listo para calcular el preparado.',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
           ],
           const SizedBox(height: 16),
-          Expanded(
-            child: _pasoLista.envolver(
-              _plan == null || _plan!.detalle.isEmpty
-                  ? const Center(child: Text('Aún no hay productos planificados hoy.'))
-                  : ListView(
-                    children: _plan!.detalle
-                        .map((d) => Card(
-                              child: ListTile(
-                                onTap: widget.onIrAJarabes == null
-                                    ? null
-                                    : () => widget.onIrAJarabes!(d.sabor),
-                                leading: Icon(
-                                  d.completado
-                                      ? Icons.check_circle
-                                      : Icons.radio_button_unchecked,
-                                  color: d.completado
-                                      ? Colors.green
-                                      : Colors.grey,
-                                  size: 32,
-                                ),
-                                title: Text(d.nombreProducto ?? d.sabor,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold)),
-                                subtitle: Text(d.completado
-                                    ? '${fmtNum(d.botellasProducidas, decimales: 0)} botellas producidas'
-                                        '${d.mermaLitros > 0 ? ' · merma: ${fmtNum(d.mermaLitros, decimales: 0)} L' : ''}'
-                                    : '${d.litrosPlanificados.toStringAsFixed(0)} litros planificados'),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (widget.onIrAJarabes != null)
-                                      IconButton(
-                                        tooltip: 'Ir a Jarabes a calcular el preparado',
-                                        icon: const Icon(Icons.water_drop_outlined,
-                                            color: AppColors.primario),
-                                        onPressed: () => widget.onIrAJarabes!(d.sabor),
-                                      ),
-                                    if (d.completado)
-                                      usuario.puedeEditarProduccion
-                                          ? ActionChip(
-                                              label: const Text('Completado'),
-                                              avatar: const Icon(Icons.edit_outlined, size: 16),
-                                              onPressed: () => _marcarCompletado(d),
-                                            )
-                                          : const Chip(label: Text('Completado'))
-                                    else if (usuario.puedeEditarProduccion)
-                                      ElevatedButton(
-                                        onPressed: () => _marcarCompletado(d),
-                                        child: const Text('Marcar hecho'),
-                                      )
-                                    else
-                                      const Text('Pendiente',
-                                          style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                            ))
-                        .toList(),
+          _pasoListaActual.envolver(
+            _plan == null || _plan!.detalle.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(child: Text('Aún no hay productos planificados hoy.')),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [for (final d in _plan!.detalle) _tarjeta(d, usuario)],
                   ),
-            ),
           ),
-        ],
+      ],
+    );
+  }
+
+  /// Una tarjeta por producto. Antes era un `ListTile` con el ícono de gota y
+  /// "Marcar hecho" en `trailing`: en un celular esos botones se quedaban con
+  /// todo el ancho y el nombre del producto se partía letra por letra. Ahora
+  /// el texto va arriba a todo el ancho y las acciones en un `Wrap` abajo.
+  /// El atajo a Jarabes es para quien trabaja con el plan; el Gerente (solo
+  /// informes) no prepara jarabe, y Jarabes ni está en su menú.
+  void Function(String sabor)? _irAJarabes(Usuario usuario) =>
+      usuario.soloInformes ? null : widget.onIrAJarabes;
+
+  Widget _tarjeta(PlanProduccionDetalle d, Usuario usuario) {
+    final ir = _irAJarabes(usuario);
+    final irAJarabes = ir == null ? null : () => ir(d.sabor);
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: irAJarabes,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    d.completado ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: d.completado ? Colors.green : Colors.grey,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(d.nombreProducto ?? d.sabor,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        Text(
+                          d.completado
+                              ? '${fmtNum(d.botellasProducidas, decimales: 0)} botellas producidas'
+                                  '${d.mermaLitros > 0 ? ' · merma: ${fmtNum(d.mermaLitros, decimales: 0)} L' : ''}'
+                              : '${fmtNum(d.litrosPlanificados, decimales: 0)} litros planificados',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  if (irAJarabes != null)
+                    TextButton.icon(
+                      onPressed: irAJarabes,
+                      icon: const Icon(Icons.water_drop_outlined, size: 18),
+                      label: const Text('Jarabes'),
+                    ),
+                  if (d.completado)
+                    usuario.puedeEditarProduccion
+                        ? ActionChip(
+                            label: const Text('Completado'),
+                            avatar: const Icon(Icons.edit_outlined, size: 16),
+                            onPressed: () => _marcarCompletado(d),
+                          )
+                        : const Chip(label: Text('Completado'))
+                  else if (usuario.puedeEditarProduccion)
+                    FilledButton(
+                      onPressed: () => _marcarCompletado(d),
+                      child: const Text('Marcar hecho'),
+                    )
+                  else
+                    const Text('Pendiente', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

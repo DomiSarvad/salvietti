@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/filas_sin_subir.dart';
 import '../../../shared/realtime.dart';
 
 export '../../../shared/realtime.dart' show Suscripcion, SuscripcionNula;
@@ -103,7 +104,29 @@ class SupabaseSopladoRepository implements SopladoRepository {
         .order('hora_inicio', ascending: false)
         .limit(limite)
         .timeout(SupabaseService.timeoutRed);
-    return [for (final f in filas) CorridaSoplado.fromMap(f)];
+    return [...await _sinSubir(), for (final f in filas) CorridaSoplado.fromMap(f)];
+  }
+
+  /// Corridas iniciadas sin internet que siguen en la cola (ver filasSinSubir).
+  Future<List<CorridaSoplado>> _sinSubir() async {
+    final filas = filasSinSubir('soplado_iniciar_corrida',
+        cierran: const ['soplado_finalizar_corrida', 'soplado_anular_corrida']);
+    if (filas.isEmpty) return const [];
+    var sab = <int, String>{}, pre = <int, String>{};
+    try {
+      sab = {for (final s in await sabores()) s.id: s.nombre};
+      pre = {for (final p in await presentacionesPet()) p.id: p.nombre};
+    } catch (_) {
+      // Sin copia de los catálogos: la tarjeta sale sin nombres, pero sale.
+    }
+    return [
+      for (final f in filas)
+        CorridaSoplado.fromMap({
+          ...f,
+          'sabores': {'nombre': sab[f['sabor_id']]},
+          'presentaciones': {'nombre': pre[f['presentacion_id']]},
+        }),
+    ];
   }
 
   @override

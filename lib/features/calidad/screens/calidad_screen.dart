@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -9,6 +10,7 @@ import '../repositories/calidad_repository.dart';
 import '../services/calidad_service.dart';
 import '../widgets/actualizar_analisis_dialog.dart';
 import '../widgets/analisis_form_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Control de Calidad: preparados de Jarabes pendientes de analizar, e
 /// historial de análisis. Solo UI; las reglas viven en el service.
@@ -20,7 +22,10 @@ class CalidadScreen extends StatelessWidget {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => CalidadService(SupabaseCalidadRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<CalidadService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -36,13 +41,12 @@ class _VistaState extends State<_Vista> {
   final _pasoPendientes = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Pendientes de analizar',
-    texto: 'Los preparados que Jarabes ya finalizó y todavía no tienen análisis de '
-        'Calidad (Brix, pH, aspecto).',
+    texto: 'Preparados de Jarabes que esperan análisis.',
   );
   final _pasoHistorial = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Historial',
-    texto: 'Los análisis ya hechos, marcados como conforme o no conforme.',
+    texto: 'Análisis hechos: conforme o no conforme.',
   );
 
   @override
@@ -87,13 +91,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.analisis;
+    final lista = svc.analisisFiltrados;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por sabor, lote, resultado, responsable…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay análisis registrados.',

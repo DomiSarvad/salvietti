@@ -22,8 +22,7 @@ class _HistorialScreenState extends State<HistorialScreen>
   final _pasoTabs = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Acciones y eliminaciones',
-    texto: 'Qué usuario entra y qué hace (acciones), y aparte todo lo eliminado '
-        'lógicamente — acá nunca se borra nada del todo.',
+    texto: 'Qué hace cada usuario y qué se eliminó.',
   );
 
   @override

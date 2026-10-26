@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,11 @@ import '../../utils/formatters.dart';
 /// como imagen y compartirla por WhatsApp con los operarios de planta, que
 /// no tienen acceso al sistema — tal como hoy lo hacen a mano con una
 /// captura de su planilla.
+///
+/// La foto NO se guarda: se manda directo al panel de compartir (WhatsApp)
+/// y queda solo en el chat. Es diaria y se acumularía ocupando lugar en la
+/// compu/celular; los datos del plan ya están en el sistema (y en Informes).
+/// "Descargar" queda aparte, para quien sí la quiera como archivo.
 class ProduccionCapturaDialog extends StatefulWidget {
   final PlanProduccion plan;
   final Usuario usuario;
@@ -25,52 +31,60 @@ class ProduccionCapturaDialog extends StatefulWidget {
 
 class _ProduccionCapturaDialogState extends State<ProduccionCapturaDialog> {
   final _capturaKey = GlobalKey();
-  bool _guardando = false;
+  bool _trabajando = false;
   String? _mensaje;
 
-  Future<void> _compartir() async {
+  String get _nombre => 'produccion_${fmtFecha(widget.plan.fecha).replaceAll('/', '-')}';
+
+  Future<Uint8List> _imagen() async {
+    final boundary = _capturaKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) throw Exception('No se pudo preparar la imagen.');
+    final imagen = await boundary.toImage(pixelRatio: 2.5);
+    final byteData = await imagen.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) throw Exception('No se pudo generar el PNG.');
+    return byteData.buffer.asUint8List();
+  }
+
+  Future<void> _hacer(Future<String> Function(Uint8List bytes) accion) async {
     setState(() {
-      _guardando = true;
+      _trabajando = true;
       _mensaje = null;
     });
     try {
-      final boundary = _capturaKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
-      if (boundary == null) throw Exception('No se pudo preparar la imagen.');
-      final imagen = await boundary.toImage(pixelRatio: 2.5);
-      final byteData = await imagen.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw Exception('No se pudo generar el PNG.');
-      final bytes = byteData.buffer.asUint8List();
-      final nombre = 'produccion_${fmtFecha(widget.plan.fecha).replaceAll('/', '-')}';
+      final m = await accion(await _imagen());
+      if (mounted) setState(() => _mensaje = m);
+    } catch (e) {
+      if (mounted) setState(() => _mensaje = 'No se pudo generar la imagen: $e');
+    } finally {
+      if (mounted) setState(() => _trabajando = false);
+    }
+  }
 
-      // Primero se intenta el panel nativo de compartir (WhatsApp,
-      // Bluetooth, etc.) — funciona en celular y en la mayoría de los
-      // navegadores. Si la plataforma no lo soporta (ej. escritorio sin
-      // panel de compartir), se guarda directo en el dispositivo como
-      // respaldo, en vez de mostrar un error.
-      try {
-        await Share.shareXFiles(
-          [XFile.fromData(bytes, mimeType: 'image/png', name: '$nombre.png')],
-          text: 'Producción del día — ${fmtFecha(widget.plan.fecha)}',
-        );
-        setState(() => _mensaje = 'Listo para compartir.');
-      } catch (_) {
+  /// Panel de compartir del celular/navegador (WhatsApp, etc.), con la
+  /// imagen en memoria: no queda un archivo guardado.
+  Future<void> _compartir() => _hacer((bytes) async {
+        try {
+          await Share.shareXFiles(
+            [XFile.fromData(bytes, mimeType: 'image/png', name: '$_nombre.png')],
+            text: 'Producción del día — ${fmtFecha(widget.plan.fecha)}',
+          );
+          return 'Listo para compartir.';
+        } catch (_) {
+          // Antes se guardaba sola en la compu: ahora solo si la persona lo pide.
+          return 'Este equipo no tiene panel de compartir. Usá "Descargar" y '
+              'adjuntala en WhatsApp a mano.';
+        }
+      });
+
+  Future<void> _descargar() => _hacer((bytes) async {
         await FileSaver.instance.saveFile(
-          name: nombre,
+          name: _nombre,
           bytes: bytes,
           ext: 'png',
           mimeType: MimeType.png,
         );
-        setState(() => _mensaje =
-            'Tu dispositivo no tiene panel de compartir: se guardó la imagen '
-            'localmente. Ya la podés adjuntar en WhatsApp a mano.');
-      }
-    } catch (e) {
-      setState(() => _mensaje = 'No se pudo generar la imagen: $e');
-    } finally {
-      if (mounted) setState(() => _guardando = false);
-    }
-  }
+        return 'Imagen descargada.';
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -203,25 +217,33 @@ class _ProduccionCapturaDialogState extends State<ProduccionCapturaDialog> {
         ),
         ),
       ),
+      // OverflowBar (lo usa AlertDialog por dentro): en un celular angosto
+      // los botones se apilan en vez de desbordarse.
       actions: [
         if (_mensaje != null)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
+          SizedBox(
+            width: double.infinity,
             child: Text(_mensaje!,
                 style: const TextStyle(fontSize: 11, color: Colors.black54)),
           ),
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar')),
+        // A un costado: lo habitual es mandarla por WhatsApp sin guardarla.
+        TextButton.icon(
+          onPressed: _trabajando ? null : _descargar,
+          icon: const Icon(Icons.download_outlined, size: 18),
+          label: const Text('Descargar'),
+        ),
         FilledButton.icon(
-          onPressed: _guardando ? null : _compartir,
-          icon: _guardando
+          onPressed: _trabajando ? null : _compartir,
+          icon: _trabajando
               ? const SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.share, size: 18),
-          label: const Text('Compartir'),
+          label: const Text('Compartir por WhatsApp'),
         ),
       ],
     );

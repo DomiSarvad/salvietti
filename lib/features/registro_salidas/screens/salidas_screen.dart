@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -21,7 +22,10 @@ class SalidasScreen extends StatelessWidget {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => SalidasService(SupabaseSalidasRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<SalidasService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -37,19 +41,17 @@ class _VistaState extends State<_Vista> {
   final _pasoAbrirReporte = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Abrir reporte',
-    texto: 'Abrí el reporte del turno para ir cargando lo que se produjo de cada '
-        'sabor y formato. No vuelve a descontar el almacén: eso ya lo hizo Almacén al '
-        'entregar el pedido.',
+    texto: 'El reporte del turno, para cargar lo producido.',
   );
   final _pasoHistorial = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Historial',
-    texto: 'Los reportes ya cerrados de días anteriores.',
+    texto: 'Reportes cerrados.',
   );
   final _pasoPlanilla = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Planilla de producción',
-    texto: 'Se arma sola con lo cargado en los reportes de arriba.',
+    texto: 'Se arma sola con los reportes.',
   );
 
   @override

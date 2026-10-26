@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/pagina_o_dialogo.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../../core/constants.dart';
@@ -31,13 +32,12 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   final _pasoNuevoUsuario = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Nuevo usuario',
-    texto: 'Al crear o editar un usuario elegís su rol; ahí mismo podés ver y ajustar '
-        'los permisos de ese rol.',
+    texto: 'Elegí su rol; ahí ves sus permisos.',
   );
   final _pasoLista = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Lista de usuarios',
-    texto: 'Tocá el lápiz para editar nombre, correo, rol, área o estado de un usuario.',
+    texto: 'Tocá el lápiz para editar.',
   );
 
   @override
@@ -134,9 +134,11 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   }
 
   Future<void> _abrirFormulario({Map<String, dynamic>? usuario}) async {
-    final guardado = await showDialog<bool>(
-      context: context,
-      builder: (_) => UsuarioFormDialog(
+    final guardado = await abrirPaginaODialogo<bool>(
+      context,
+      titulo: usuario == null ? 'Nuevo usuario' : 'Editar usuario',
+      builder: (pagina) => UsuarioFormDialog(
+        comoPagina: pagina,
         usuario: usuario,
         correoActual: usuario != null ? _correos[usuario['id']] : null,
         avisoCorreo: _avisoCorreos,

@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
+import '../../../shared/filtros/filtro_lista.dart';
 import '../../../utils/formatters.dart';
 import '../models/informes_modelos.dart';
 import '../repositories/informes_repository.dart';
 
-/// Arma los informes por área para el Gerente: elige el período (semana o
-/// mes), trae las filas del rango y las agrega en KPIs, series para el
+/// Arma los informes por área para el Gerente: elige el período (semana, mes,
+/// año o fechas elegidas), trae las filas del rango y las agrega en KPIs, series para el
 /// gráfico y una tabla de detalle. Solo cuenta lo FINALIZADO (lo en curso no
 /// tiene resultado todavía; lo anulado no se produjo). No conoce widgets.
 class InformesService extends ChangeNotifier {
@@ -34,7 +36,29 @@ class InformesService extends ChangeNotifier {
   /// No se puede avanzar más allá del período actual (no hay datos del futuro).
   bool get puedeAvanzar => !rango.hasta.isAfter(_ahora());
 
-  Future<void> iniciar() => cargar();
+  Suscripcion? _suscripcion;
+  Timer? _recargaPendiente;
+  bool _cerrado = false;
+
+  @override
+  void dispose() {
+    _cerrado = true;
+    _suscripcion?.cancelar();
+    _recargaPendiente?.cancel();
+    super.dispose();
+  }
+
+  /// Tiempo real: cuando alguien registra algo (una corrida, un preparado, un
+  /// análisis…), el informe que se está mirando se vuelve a armar solo, sin
+  /// spinner. Varios cambios seguidos se juntan en una sola recarga.
+  Future<void> iniciar() async {
+    await cargar();
+    if (!puedeVer || _cerrado) return;
+    _suscripcion ??= _repo.escucharCambios(() {
+      _recargaPendiente?.cancel();
+      _recargaPendiente = Timer(const Duration(seconds: 1), () => cargar(silencioso: true));
+    });
+  }
 
   void elegirArea(AreaInforme a) {
     if (a == area) return;
@@ -42,10 +66,59 @@ class InformesService extends ChangeNotifier {
     cargar();
   }
 
+  /// Semana, mes o año: el último elegido en el selector. Al quitar las
+  /// fechas Desde/Hasta se vuelve a este.
+  PeriodoInforme periodoBase = PeriodoInforme.semana;
+
   void elegirPeriodo(PeriodoInforme p) {
-    if (p == rango.periodo) return;
+    if (p == PeriodoInforme.fechas || p == rango.periodo) return;
+    periodoBase = p;
     rango = RangoInforme.de(p, _ahora());
     cargar();
+  }
+
+  /// Informe de un rango elegido a mano (los dos días incluidos). No se
+  /// puede pasar de hoy: lo que viene se ve en la proyección, no acá.
+  void elegirFechas(DateTime desde, DateTime ultimoDia) {
+    rango = RangoInforme.entre(desde, _alTope(ultimoDia));
+    cargar();
+  }
+
+  /// Cambia solo un extremo y deja el otro como está (si quedan al revés,
+  /// `RangoInforme.entre` los da vuelta).
+  void elegirDesde(DateTime d) => elegirFechas(d, rango.ultimoDia);
+  void elegirHasta(DateTime h) => elegirFechas(rango.desde, h);
+
+  /// Vuelve al período del selector (la semana/mes/año actual).
+  void quitarFechas() {
+    rango = RangoInforme.de(periodoBase, _ahora());
+    cargar();
+  }
+
+  /// Pone al lado del período el anterior del mismo largo: en "Mes", el mes
+  /// pasado (semana a semana); en "Año", el año pasado (mes a mes).
+  bool comparar = false;
+
+  void alternarComparar() {
+    comparar = !comparar;
+    cargar();
+  }
+
+  /// Texto para quedarse con algo específico (un sabor, un producto, un
+  /// área…): todas las palabras, en cualquier orden, sin tildes. Se aplica a
+  /// las filas ANTES de calcular, así indicadores, gráfico, tabla, proyección
+  /// y lo que se imprime son solo de eso.
+  String busqueda = '';
+
+  void buscar(String texto) {
+    if (texto.trim() == busqueda.trim()) return;
+    busqueda = texto;
+    cargar();
+  }
+
+  DateTime _alTope(DateTime d) {
+    final hoy = _ahora();
+    return d.isAfter(hoy) ? hoy : d;
   }
 
   void anterior() {
@@ -55,25 +128,33 @@ class InformesService extends ChangeNotifier {
 
   void siguiente() {
     if (!puedeAvanzar) return;
-    rango = rango.siguiente();
+    final s = rango.siguiente();
+    rango = s.periodo == PeriodoInforme.fechas ? RangoInforme.entre(s.desde, _alTope(s.ultimoDia)) : s;
     cargar();
   }
 
-  Future<void> cargar() async {
-    if (!puedeVer) return;
+  Future<void> cargar({bool silencioso = false}) async {
+    if (!puedeVer || _cerrado) return;
     final pedido = ++_pedido;
-    cargando = true;
-    error = null;
-    notifyListeners();
+    if (!silencioso) {
+      cargando = true;
+      error = null;
+      notifyListeners();
+    }
     try {
-      final r = await construir(area, rango);
-      if (pedido != _pedido) return;
+      var r = await construir(area, rango);
+      if (comparar) r = r.conAnterior(await construir(area, rango.anterior()));
+      if (pedido != _pedido || _cerrado) return;
       informe = r;
+      error = null;
     } catch (e) {
-      if (pedido != _pedido) return;
+      if (pedido != _pedido || _cerrado) return;
       if (kDebugMode) debugPrint('InformesService: $e');
-      informe = null;
-      error = 'No se pudo armar el informe de ${area.titulo}. Revisá la conexión.';
+      // Una actualización en segundo plano que falla no borra lo que se ve.
+      if (!silencioso) {
+        informe = null;
+        error = 'No se pudo armar el informe de ${area.titulo}. Revisá la conexión.';
+      }
     }
     cargando = false;
     notifyListeners();
@@ -120,21 +201,110 @@ class InformesService extends ChangeNotifier {
   static double _porcentaje(double parte, double total) => total <= 0 ? 0 : parte * 100 / total;
 
   Future<List<Map<String, dynamic>>> _filas(RangoInforme r, String tabla, String select,
-          {String fecha = 'fecha', bool esDia = true}) =>
-      _repo.filas(
-          tabla: tabla,
-          select: select,
-          columnaFecha: fecha,
-          desde: r.desde,
-          hasta: r.hasta,
-          fechaEsDia: esDia);
+      {String fecha = 'fecha', bool esDia = true}) async {
+    final filas = await _repo.filas(
+        tabla: tabla,
+        select: select,
+        columnaFecha: fecha,
+        desde: r.desde,
+        hasta: r.hasta,
+        fechaEsDia: esDia);
+    return _filtrar(filas, fecha);
+  }
+
+  /// Texto con el que se filtran las FILAS al armar un informe (ver
+  /// [construir]). Va en la zona del armado y no en un campo: una recarga en
+  /// tiempo real puede estar armándose a la vez que otra y se pisarían.
+  static const _zonaTextoFilas = #informesTextoFilas;
+
+  List<Map<String, dynamic>> _filtrar(List<Map<String, dynamic>> filas, String colFecha) {
+    final texto = (Zone.current[_zonaTextoFilas] as String?) ?? '';
+    return texto.isEmpty
+        ? filas
+        : FiltroLista(texto: texto).aplicar(filas, texto: (f) => _textoDe(f, colFecha));
+  }
+
+  /// Todo el texto de una fila (incluido lo que viene de otra tabla, ej. el
+  /// nombre del sabor), menos la fecha: buscar "10" no tiene que traer todo
+  /// octubre.
+  static String _textoDe(Map<String, dynamic> f, String colFecha) {
+    final partes = <String>[];
+    void agregar(Object? v) {
+      if (v is String) partes.add(v);
+      if (v is Map) v.values.forEach(agregar);
+    }
+
+    for (final e in f.entries) {
+      if (e.key != colFecha) agregar(e.value);
+    }
+    return partes.join(' ');
+  }
 
   // --------------------------------------------------------------- por área
 
-  Future<InformeArea> construir(AreaInforme a, RangoInforme r) {
+  /// La búsqueda puede ser dos cosas, y se prueba en este orden:
+  ///  1. El nombre de un indicador ("botellas producidas", "merma"): se ven
+  ///     solo esos indicadores (KPIs, series del gráfico y filas de la tabla
+  ///     que lo nombran), con TODOS los datos. Antes esto se buscaba en los
+  ///     registros, no coincidía con ninguno y todo daba 0.
+  ///  2. Si no es un indicador, un dato de los registros (un sabor, un
+  ///     producto, un área): se calcula solo con esos registros.
+  Future<InformeArea> construir(AreaInforme a, RangoInforme r) async {
+    final texto = busqueda.trim();
+    final completo = proyectar(await _construir(a, r), _ahora());
+    if (texto.isEmpty) return completo;
+
+    final f = FiltroLista(texto: texto);
+    bool nombra(String s) => f.aplicar([s], texto: (x) => x).isNotEmpty;
+    final kpis = completo.kpis.where((k) => nombra(k.etiqueta)).toList();
+    final series = completo.series.where((s) => nombra(s.nombre)).toList();
+    if (kpis.isNotEmpty || series.isNotEmpty) {
+      final filas = completo.filas.where((fila) => fila.any(nombra)).toList();
+      return completo.soloIndicadores(
+        kpis: kpis.isEmpty ? completo.kpis : kpis,
+        series: series.isEmpty ? completo.series : series,
+        filas: filas.isEmpty ? completo.filas : filas,
+        busqueda: texto,
+      );
+    }
+    final filtrado = await runZoned(() => _construir(a, r), zoneValues: {_zonaTextoFilas: texto});
+    return proyectar(filtrado, _ahora()).conBusqueda(texto);
+  }
+
+  /// Si el período está en curso, estima cuánto se llega a tener al cerrarlo
+  /// siguiendo al ritmo promedio por día de lo que va (hoy cuenta como día
+  /// transcurrido). Lo estimado se reparte en las barras por los días que les
+  /// faltan. Todas las series son sumas (unidades, litros, cantidad de
+  /// eventos), así que proyectar así tiene sentido para todas.
+  static InformeArea proyectar(InformeArea i, DateTime ahora) {
+    final r = i.rango;
+    final manana = DateTime(ahora.year, ahora.month, ahora.day + 1);
+    if (!manana.isAfter(r.desde) || !manana.isBefore(r.hasta)) return i;
+    final transcurridos = manana.difference(r.desde).inDays;
+    int diasRestantes(int b) {
+      final ini = r.inicios[b].isAfter(manana) ? r.inicios[b] : manana;
+      final n = r.finDe(b).difference(ini).inDays;
+      return n > 0 ? n : 0;
+    }
+
+    // Se dibuja hasta la barra de hoy: la estimación de los días que le faltan
+    // a ESA barra va apilada; la de las barras que todavía no empezaron (ej.
+    // noviembre y diciembre) solo cuenta en la tarjeta "Proyección al cierre".
+    final hastaHoy = r.indiceDe(DateTime(ahora.year, ahora.month, ahora.day))! + 1;
+    return i.conSeries([
+      for (final s in i.series)
+        s.conProyeccion([
+          for (var b = 0; b < s.valores.length; b++) s.total / transcurridos * diasRestantes(b),
+        ]),
+    ], barrasHastaHoy: hastaHoy);
+  }
+
+  Future<InformeArea> _construir(AreaInforme a, RangoInforme r) {
     switch (a) {
       case AreaInforme.general:
         return _general(r);
+      case AreaInforme.plan:
+        return _plan(r);
       case AreaInforme.jarabes:
         return _jarabes(r);
       case AreaInforme.soplado:
@@ -168,6 +338,93 @@ class InformesService extends ChangeNotifier {
       case AreaInforme.soda:
         return _soda(r);
     }
+  }
+
+  /// La planilla que arma el Jefe de Producción cada día (la misma que se
+  /// manda por WhatsApp como foto, que no se guarda): una fila por producto
+  /// de cada día, con lo planificado y lo producido. A diferencia de las
+  /// demás áreas acá SÍ entra lo no completado: lo que se planificó y no se
+  /// hizo es justamente lo que interesa ver.
+  Future<InformeArea> _plan(RangoInforme r) async {
+    final planes = await _repo.filas(
+        tabla: 'plan_produccion',
+        select: 'fecha, plan_produccion_detalle(litros_planificados, litros_producidos, '
+            'botellas_producidas, merma_litros, completado, formulas(sabor), '
+            'productos_terminados(nombre, litros_por_botella, botellas_por_paquete))',
+        columnaFecha: 'fecha',
+        desde: r.desde,
+        hasta: r.hasta);
+    // Una fila por producto (la búsqueda se aplica a cada una, no al día entero).
+    final fs = _filtrar([
+      for (final p in planes)
+        for (final d in (p['plan_produccion_detalle'] as List? ?? const []).cast<Map>())
+          {
+            'fecha': p['fecha'],
+            'producto': ((d['productos_terminados'] as Map?)?['nombre'] as String?) ??
+                ((d['formulas'] as Map?)?['sabor'] as String?) ??
+                'Sin dato',
+            'sabor': (d['formulas'] as Map?)?['sabor'],
+            'litros_planificados': d['litros_planificados'],
+            'litros_producidos': d['litros_producidos'],
+            'botellas_producidas': d['botellas_producidas'],
+            'merma_litros': d['merma_litros'],
+            'completado': d['completado'] == true,
+            'litros_por_botella': (d['productos_terminados'] as Map?)?['litros_por_botella'],
+            'botellas_por_paquete': (d['productos_terminados'] as Map?)?['botellas_por_paquete'],
+          },
+    ], 'fecha');
+    final hechos = fs.where((f) => f['completado'] == true).toList();
+    final plan = _suma(fs, 'litros_planificados');
+    final prod = _suma(fs, 'litros_producidos');
+    final cumplimiento = _porcentaje(prod, plan);
+    double botellasPlan(Map<String, dynamic> f) {
+      final lpb = _n(f['litros_por_botella']);
+      return lpb <= 0 ? 0 : _n(f['litros_planificados']) / lpb;
+    }
+
+    String paquetes(Map<String, dynamic> f) {
+      final bpp = _n(f['botellas_por_paquete']);
+      return bpp <= 0 ? '—' : fmtNum(botellasPlan(f) / bpp, decimales: 0);
+    }
+
+    final orden = [...fs]..sort((a, b) => (a['fecha'] as String).compareTo(b['fecha'] as String));
+    return InformeArea(
+      area: AreaInforme.plan,
+      rango: r,
+      kpis: [
+        KpiInforme('Productos planificados', '${fs.length}'),
+        KpiInforme('Completados', '${hechos.length}'),
+        KpiInforme('Litros planificados', fmtNum(plan, decimales: 0)),
+        KpiInforme('Litros producidos', fmtNum(prod, decimales: 0)),
+        KpiInforme('% de cumplimiento', _pct(cumplimiento), alerta: plan > 0 && cumplimiento < 90),
+        KpiInforme('Merma (litros)', fmtNum(_suma(fs, 'merma_litros'), decimales: 0)),
+      ],
+      tituloGrafico: 'Litros planificados y producidos',
+      series: [
+        SerieInforme('Planificado', _serie(r, fs, 'fecha', (f) => _n(f['litros_planificados']))),
+        SerieInforme('Producido', _serie(r, fs, 'fecha', (f) => _n(f['litros_producidos']))),
+      ],
+      tituloTabla: 'Plan de producción',
+      columnas: const [
+        'Fecha', 'Producto', 'Paq./Cajas', 'Total botellas', 'Litros plan.', 'Litros prod.',
+        'Merma (L)', 'Estado',
+      ],
+      filas: [
+        for (final f in orden)
+          [
+            fmtFecha(_fecha(f, 'fecha')),
+            f['producto'] as String,
+            paquetes(f),
+            fmtNum(botellasPlan(f), decimales: 0),
+            fmtNum(_n(f['litros_planificados']), decimales: 0),
+            f['litros_producidos'] == null ? '—' : fmtNum(_n(f['litros_producidos']), decimales: 0),
+            fmtNum(_n(f['merma_litros']), decimales: 0),
+            f['completado'] == true ? 'Completado' : 'Pendiente',
+          ]
+      ],
+      nota: 'Cumplimiento = litros producidos sobre planificados; en alerta si queda por '
+          'debajo del 90 %.',
+    );
   }
 
   Future<InformeArea> _jarabes(RangoInforme r) async {

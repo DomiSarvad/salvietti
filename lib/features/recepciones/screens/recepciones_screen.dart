@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -9,6 +10,7 @@ import '../repositories/recepciones_repository.dart';
 import '../services/recepciones_service.dart';
 import '../widgets/recepcion_detalle_dialog.dart';
 import '../widgets/recepcion_form_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Recepciones de Almacén: lista de lo que llegó (factura contra peso real) y
 /// reclamos del mes por diferencia. Solo UI; las reglas están en el service.
@@ -21,7 +23,10 @@ class RecepcionesScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) =>
           RecepcionesService(SupabaseRecepcionesRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<RecepcionesService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -42,19 +47,17 @@ class _VistaState extends State<_Vista> {
   final _pasoAlmacenChips = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Almacenes',
-    texto: 'Con qué almacén trabajar, según a cuáles tenga acceso tu rol.',
+    texto: 'Elegí con qué almacén trabajar.',
   );
   final _pasoVista = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Recepciones / Reclamos del mes',
-    texto: '"Recepciones" es lo que llegó, factura contra peso real. "Reclamos del '
-        'mes" junta lo que faltó, por proveedor e ítem, para el mes que elijas.',
+    texto: 'Lo que llegó, y lo que faltó por proveedor.',
   );
   final _pasoBuscador = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Buscador y filtro',
-    texto: 'Buscá por ítem, proveedor, factura o lote. "Con diferencia" filtra solo '
-        'las recepciones donde lo real no coincidió con la factura.',
+    texto: '"Con diferencia": donde lo real no coincide con la factura.',
   );
 
   @override
@@ -199,28 +202,24 @@ class _Cabecera extends StatelessWidget {
           )),
           if (svc.vista == VistaRecepciones.lista) ...[
             const SizedBox(height: 10),
-            pasoBuscador.envolver(Row(
+            // Buscador común: texto, Desde/Hasta, y PDF/Excel de lo filtrado.
+            pasoBuscador.envolver(Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    onChanged: svc.buscar,
-                    decoration: InputDecoration(
-                      hintText: 'Buscar por ítem, proveedor, factura o lote…',
-                      prefixIcon: const Icon(Icons.search),
-                      isDense: true,
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none),
-                    ),
-                  ),
+                BarraFiltros(
+                  filtro: svc.filtro,
+                  onCambio: svc.filtrar,
+                  reporte: svc.reporte,
+                  hint: 'Buscar por ítem, proveedor, factura o lote…',
                 ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: const Text('Con diferencia'),
-                  selected: svc.soloConDiferencia,
-                  onSelected: (_) => svc.alternarSoloConDiferencia(),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilterChip(
+                    label: const Text('Con diferencia'),
+                    selected: svc.soloConDiferencia,
+                    onSelected: (_) => svc.alternarSoloConDiferencia(),
+                  ),
                 ),
               ],
             )),

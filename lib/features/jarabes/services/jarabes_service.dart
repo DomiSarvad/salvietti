@@ -5,6 +5,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/jarabes_modelos.dart';
 import '../repositories/jarabes_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas de Recetas y producción de Jarabes: quién propone y quién aprueba
 /// una receta, verificación de insumos antes de iniciar un preparado, y el
@@ -233,4 +235,28 @@ class JarabesService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<Preparado> get historialFiltrado => filtro.aplicar(historial,
+      texto: (x) => <String?>[x.sabor, 'lote ${x.nLote}', x.tanque?.toString(), x.responsableNombre, x.observaciones].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Preparados de Jarabes',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Sabor', 'Lote', 'Tanque', 'Estado', 'Preparados', 'Litros', 'Brix', 'Responsable'],
+        filas: [
+          for (final x in historialFiltrado) [x.fecha, x.sabor, x.nLote, x.tanque, x.estado.etiqueta, x.cantidadPreparados, x.litros, x.brix, x.responsableNombre]
+        ],
+      );
 }

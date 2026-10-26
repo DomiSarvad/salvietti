@@ -137,6 +137,9 @@ class CorridaCodificacion {
   });
 
   Duration? get duracion => horaFin?.difference(horaInicio);
+
+  /// Iniciado sin internet y todavía en la cola (id provisorio negativo).
+  bool get sinSubir => id < 0;
   bool get tieneMerma => botellasMalTapadas > 0 || tapasMalTapadas > 0 || impurezas > 0;
   double? get botellasBuenas =>
       botellasCodificadas == null ? null : botellasCodificadas! - botellasMalTapadas;

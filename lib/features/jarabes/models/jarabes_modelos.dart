@@ -217,6 +217,9 @@ class Preparado {
 
   Duration? get duracion => horaFin?.difference(horaInicio);
 
+  /// Iniciado sin internet y todavía en la cola (id provisorio negativo).
+  bool get sinSubir => id < 0;
+
   factory Preparado.fromMap(Map<String, dynamic> m) {
     final sabor = m['sabores'] as Map?;
     return Preparado(

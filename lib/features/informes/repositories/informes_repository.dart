@@ -1,4 +1,7 @@
 import '../../../services/supabase_service.dart';
+import '../../../shared/realtime.dart';
+
+export '../../../shared/realtime.dart' show Suscripcion, SuscripcionNula;
 
 /// Acceso a datos de Informes: solo lectura, filas de una tabla o vista en un
 /// rango de fechas. No calcula nada; el service agrega y arma el informe.
@@ -13,6 +16,10 @@ abstract class InformesRepository {
     required DateTime hasta,
     bool fechaEsDia = true,
   });
+
+  /// Avisa cuando cambia cualquiera de las tablas de las que salen los
+  /// informes (v41/v42/v43 las agregan a la publicación de Realtime).
+  Suscripcion escucharCambios(void Function() onCambio);
 }
 
 class SupabaseInformesRepository implements InformesRepository {
@@ -40,4 +47,24 @@ class SupabaseInformesRepository implements InformesRepository {
         .order(columnaFecha)
         .range(ini, fin));
   }
+
+  @override
+  Suscripcion escucharCambios(void Function() onCambio) => escucharTablas(
+        'informes_cambios',
+        const [
+          'jarabes_preparados',
+          'soplado_corridas',
+          'llenadora_corridas',
+          'codificacion_corridas',
+          'calidad_analisis',
+          'salidas_reportes',
+          'salidas_reporte_lineas',
+          'mermas_registros',
+          'mermas_causas',
+          'inv_movimientos',
+          'compras_pedidos',
+          'soda_entregas',
+        ],
+        onCambio,
+      );
 }

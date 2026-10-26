@@ -37,7 +37,12 @@ bool _hayCamaraDisponible() {
 /// El rol y el estado activo NUNCA se pueden tocar desde acá — eso sigue
 /// siendo exclusivo de Gerente en la pantalla de Usuarios.
 class PerfilDialog extends StatefulWidget {
-  const PerfilDialog({super.key});
+  /// En el celular el perfil es una página a pantalla completa (barra negra
+  /// con flecha de volver, ver abrirPaginaODialogo), no una ventana encima.
+  /// [onCerrar], si se pasa, reemplaza al cierre normal.
+  final bool comoPantalla;
+  final VoidCallback? onCerrar;
+  const PerfilDialog({super.key, this.comoPantalla = false, this.onCerrar});
 
   @override
   State<PerfilDialog> createState() => _PerfilDialogState();
@@ -46,6 +51,16 @@ class PerfilDialog extends StatefulWidget {
 class _PerfilDialogState extends State<PerfilDialog>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+
+  /// Cierra la ventana, o vuelve a la pantalla anterior si es una sección.
+  void _cerrar() {
+    if (widget.onCerrar != null) {
+      widget.onCerrar!();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
   late final TextEditingController _nombreCtrl;
   final _nuevaCtrl = TextEditingController();
   final _datosCtrl = DatosEmpleadoCtrl();
@@ -100,7 +115,7 @@ class _PerfilDialogState extends State<PerfilDialog>
           context.read<AuthService>().usuarioActual!.id, datos);
       if (!mounted) return;
       mostrarExito(context, 'Datos personales guardados.');
-      Navigator.pop(context);
+      _cerrar();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -234,7 +249,7 @@ class _PerfilDialogState extends State<PerfilDialog>
     if (error != null) {
       setState(() => _error = error);
     } else {
-      Navigator.pop(context);
+      _cerrar();
     }
   }
 
@@ -254,7 +269,7 @@ class _PerfilDialogState extends State<PerfilDialog>
     if (error != null) {
       setState(() => _error = error);
     } else {
-      Navigator.pop(context);
+      _cerrar();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Contraseña actualizada correctamente.')));
     }
@@ -271,6 +286,62 @@ class _PerfilDialogState extends State<PerfilDialog>
     final alturaTabs =
         (MediaQuery.of(context).size.height - 400).clamp(150.0, 300.0);
 
+    final cabecera = <Widget>[
+      DialogBanner(
+        onCerrar: widget.comoPantalla ? null : _cerrar,
+        child: _AvatarConEditor(
+          radio: 42,
+          fotoPendiente: fotoPendiente,
+          avatarUrl: _avatarUrlActual,
+          inicial: usuario.nombreCompleto,
+          cargando: _subiendoFoto,
+          onEditar: () => _cambiarFoto(usuario),
+        ),
+      ),
+      const SizedBox(height: 6),
+      DialogRibbon(texto: usuario.nombreCompleto),
+      if (fotoPendiente != null) ...[
+        const SizedBox(height: 8),
+        const Text('Foto guardada en el dispositivo · se subirá sola '
+            'cuando haya internet',
+            style: TextStyle(fontSize: 11, color: Colors.orange)),
+      ],
+      const SizedBox(height: 12),
+      TabBar(
+        controller: _tabController,
+        labelColor: AppColors.primario,
+        unselectedLabelColor: Colors.black45,
+        indicatorColor: AppColors.primario,
+        tabs: const [
+          Tab(icon: Icon(Icons.badge_outlined, size: 18), text: 'General'),
+          Tab(icon: Icon(Icons.contact_page_outlined, size: 18), text: 'Personales'),
+          Tab(icon: Icon(Icons.lock_outline, size: 18), text: 'Contraseña'),
+        ],
+      ),
+    ];
+    final pestanas = TabBarView(
+      controller: _tabController,
+      children: [
+        _tabDatosGenerales(usuario),
+        _tabPersonales(),
+        _tabPassword(),
+      ],
+    );
+
+    // En el celular, página a pantalla completa: como ventanita flotante
+    // quedaba apretada y con las pestañas cortadas.
+    if (widget.comoPantalla) {
+      return Material(
+        color: Colors.white,
+        child: Column(children: [
+          ...cabecera,
+          Expanded(child: pestanas),
+          const Divider(height: 1),
+          _barraAcciones(),
+        ]),
+      );
+    }
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       clipBehavior: Clip.antiAlias,
@@ -282,48 +353,8 @@ class _PerfilDialogState extends State<PerfilDialog>
           child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DialogBanner(
-              onCerrar: () => Navigator.pop(context),
-              child: _AvatarConEditor(
-                radio: 42,
-                fotoPendiente: fotoPendiente,
-                avatarUrl: _avatarUrlActual,
-                inicial: usuario.nombreCompleto,
-                cargando: _subiendoFoto,
-                onEditar: () => _cambiarFoto(usuario),
-              ),
-            ),
-            const SizedBox(height: 6),
-            DialogRibbon(texto: usuario.nombreCompleto),
-            if (fotoPendiente != null) ...[
-              const SizedBox(height: 8),
-              const Text('Foto guardada en el dispositivo · se subirá sola '
-                  'cuando haya internet',
-                  style: TextStyle(fontSize: 11, color: Colors.orange)),
-            ],
-            const SizedBox(height: 12),
-            TabBar(
-              controller: _tabController,
-              labelColor: AppColors.primario,
-              unselectedLabelColor: Colors.black45,
-              indicatorColor: AppColors.primario,
-              tabs: const [
-                Tab(icon: Icon(Icons.badge_outlined, size: 18), text: 'General'),
-                Tab(icon: Icon(Icons.contact_page_outlined, size: 18), text: 'Personales'),
-                Tab(icon: Icon(Icons.lock_outline, size: 18), text: 'Contraseña'),
-              ],
-            ),
-            SizedBox(
-              height: alturaTabs,
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _tabDatosGenerales(usuario),
-                  _tabPersonales(),
-                  _tabPassword(),
-                ],
-              ),
-            ),
+            ...cabecera,
+            SizedBox(height: alturaTabs, child: pestanas),
             const Divider(height: 1),
             _barraAcciones(),
           ],
@@ -426,7 +457,7 @@ class _PerfilDialogState extends State<PerfilDialog>
         overflowSpacing: 8,
         children: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => _cerrar(),
               child: const Text('Cancelar')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.primario),

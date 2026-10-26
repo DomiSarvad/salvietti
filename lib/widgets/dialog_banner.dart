@@ -11,9 +11,10 @@ import '../core/constants.dart';
 /// sobresalía 40 px por fuera, y el botón de la cámara de "Mi perfil" (abajo
 /// a la derecha del avatar) se veía pero no se podía tocar.
 class DialogBanner extends StatelessWidget {
-  final VoidCallback onCerrar;
+  /// Null: sin la X (cuando es una página con su propia flecha de volver).
+  final VoidCallback? onCerrar;
   final Widget child;
-  const DialogBanner({super.key, required this.onCerrar, required this.child});
+  const DialogBanner({super.key, this.onCerrar, required this.child});
 
   static const _altoDegradado = 110.0;
   static const solape = 40.0;
@@ -34,14 +35,16 @@ class DialogBanner extends StatelessWidget {
               decoration: const BoxDecoration(gradient: AppColors.gradientePrincipal),
             ),
           ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white70),
-              onPressed: onCerrar,
+          // Sin X cuando es una página: ya tiene la flecha de volver arriba.
+          if (onCerrar != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white70),
+                onPressed: onCerrar,
+              ),
             ),
-          ),
           Positioned(bottom: 0, child: child),
         ],
       ),

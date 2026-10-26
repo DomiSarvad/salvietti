@@ -6,6 +6,7 @@ import '../models/conteo_nuevo.dart';
 import '../models/existencia_item.dart';
 import '../models/item_inventario.dart';
 import '../models/movimiento_inv.dart';
+import '../models/movimiento_periodo.dart';
 
 /// Acceso a datos del inventario por almacenes. Solo consulta y guarda: las
 /// validaciones y los permisos son del service (y, en última instancia, del
@@ -37,6 +38,11 @@ abstract class InventarioRepository {
 
   /// Últimos movimientos de un ítem en un almacén (el más nuevo primero).
   Future<List<MovimientoInv>> movimientos(int itemId, String almacenId, {int limite = 100});
+
+  /// Entradas y salidas de cada ítem del almacén en [desde, hasta) (para el
+  /// filtro de fechas de Almacenes). Solo los ítems que tuvieron movimiento.
+  Future<Map<int, MovimientoPeriodo>> movimientosPeriodo(
+      String almacenId, DateTime desde, DateTime hasta);
 
   /// Ingreso o salida manual. El servidor valida permiso, stock y motivo.
   Future<void> registrarMovimiento({
@@ -199,6 +205,25 @@ class SupabaseInventarioRepository implements InventarioRepository {
         .limit(limite)
         .timeout(SupabaseService.timeoutRed);
     return [for (final f in filas) MovimientoInv.fromMap(f)];
+  }
+
+  @override
+  Future<Map<int, MovimientoPeriodo>> movimientosPeriodo(
+      String almacenId, DateTime desde, DateTime hasta) async {
+    final filas = await SupabaseService.todasLasFilas((d, h) => _db
+        .from('inv_movimientos')
+        .select('item_id, cantidad')
+        .eq('almacen_id', almacenId)
+        .gte('fecha', desde.toUtc().toIso8601String())
+        .lt('fecha', hasta.toUtc().toIso8601String())
+        .order('id')
+        .range(d, h));
+    final out = <int, MovimientoPeriodo>{};
+    for (final f in filas) {
+      final id = (f['item_id'] as num).toInt();
+      out[id] = (out[id] ?? const MovimientoPeriodo()).sumar((f['cantidad'] as num).toDouble());
+    }
+    return out;
   }
 
   Future<void> _rpc(String funcion, Map<String, dynamic> params) async {

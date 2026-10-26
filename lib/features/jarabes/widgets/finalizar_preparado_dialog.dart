@@ -113,7 +113,7 @@ class _FinalizarPreparadoDialogState extends State<FinalizarPreparadoDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('${p.sabor ?? ''} · Lote ${p.nLote}${p.tanque == null ? '' : ' · Tanque ${p.tanque}'}',
+          Text('${p.sabor ?? ''} · ${p.sinSubir ? 'Lote al subir' : 'Lote ${p.nLote}'}${p.tanque == null ? '' : ' · Tanque ${p.tanque}'}',
               style: const TextStyle(fontWeight: FontWeight.w700)),
           Text('Inicio: ${fmtFechaHora(p.horaInicio)}'
               '${p.litros == null ? '' : ' · ${fmtNum(p.litros, decimales: 0)} L'}',

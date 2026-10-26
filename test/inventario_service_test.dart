@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:salvietti_control/features/inventario/models/movimiento_periodo.dart';
 import 'package:salvietti_control/features/inventario/models/almacen.dart';
 import 'package:salvietti_control/features/inventario/models/categoria_inv.dart';
 import 'package:salvietti_control/features/inventario/models/conteo_nuevo.dart';
@@ -11,6 +13,17 @@ import 'package:salvietti_control/features/inventario/services/inventario_servic
 import 'package:salvietti_control/models/usuario.dart';
 
 class _RepoFalso implements InventarioRepository {
+  Map<int, MovimientoPeriodo> periodo = {};
+  DateTime? periodoDesde, periodoHasta;
+
+  @override
+  Future<Map<int, MovimientoPeriodo>> movimientosPeriodo(
+      String almacenId, DateTime desde, DateTime hasta) async {
+    periodoDesde = desde;
+    periodoHasta = hasta;
+    return periodo;
+  }
+
   final creados = <ItemInventario>[];
   final conteos = <double>[];
 
@@ -427,5 +440,30 @@ void balanceTests() {
       expect(await b.guardar(), contains('No se registró ningún conteo'));
       expect(repo.lotes, isEmpty);
     });
+  });
+
+  test('con fechas muestra solo lo que se movió, con entradas y salidas, y sale en el reporte', () async {
+    await initializeDateFormatting('es_BO');
+    final repo = _RepoFalso()
+      ..periodo = {11: const MovimientoPeriodo(entradas: 50, salidas: 20)};
+    final s = await _servicio(_todoGeneral, repo);
+    expect(s.mostrarTabla, isFalse); // raíz sin filtros: solo categorías
+    expect(s.reporte().filas, hasLength(3)); // pero el reporte sale con todo el almacén
+
+    s.filtrar(s.filtro.conDesde(DateTime(2026, 10, 1)).conHasta(DateTime(2026, 10, 15)));
+    await Future<void>.delayed(Duration.zero);
+    expect(repo.periodoDesde, DateTime(2026, 10, 1));
+    expect(repo.periodoHasta, DateTime(2026, 10, 16)); // Hasta incluye el día entero
+    expect(s.mostrarTabla, isTrue);
+    expect(s.visibles.map((e) => e.itemId), [11]);
+    expect(s.movimientoDe(s.visibles.single)!.salidas, 20);
+    final r = s.reporte();
+    expect(r.columnas, containsAll(['Entradas', 'Salidas']));
+    expect(r.filas.single.sublist(r.filas.single.length - 2), [50, 20]);
+
+    s.filtrar(s.filtro.conDesde(null).conHasta(null)); // sin fechas vuelve a ser como antes
+    await Future<void>.delayed(Duration.zero);
+    expect(s.mostrarTabla, isFalse);
+    expect(s.movimientoDe(s.existencias.first), isNull);
   });
 }

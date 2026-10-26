@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../presencia/widgets/aviso_conexion_areas.dart';
 import '../../../services/auth_service.dart';
@@ -11,6 +12,8 @@ import '../repositories/llenadora_repository.dart';
 import '../services/llenadora_service.dart';
 import '../widgets/finalizar_corrida_dialog.dart';
 import '../widgets/iniciar_corrida_dialog.dart';
+import '../../../shared/chip_sin_subir.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Producción de Llenadora: corridas en curso, historial y el avance de los
 /// últimos 14 días. Solo UI; las reglas viven en el service.
@@ -22,7 +25,10 @@ class LlenadoraScreen extends StatelessWidget {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => LlenadoraService(SupabaseLlenadoraRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<LlenadoraService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -38,18 +44,17 @@ class _VistaState extends State<_Vista> {
   final _pasoIniciar = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Iniciar corrida',
-    texto: 'Elegís sabor, presentación y el preparado de Jarabes que se va a llenar.',
+    texto: 'Sabor, presentación y preparado a llenar.',
   );
   final _pasoAvance = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Avance de los últimos 14 días',
-    texto: 'Cuánto se llenó de cada sabor/presentación en las últimas dos semanas.',
+    texto: 'Lo llenado en las últimas dos semanas.',
   );
   final _pasoHistorial = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Historial',
-    texto: 'No vuelve a descontar tapas del almacén — eso ya lo hizo Almacén al '
-        'entregar el pedido. Acá solo queda el registro de cuánto se llenó y la merma.',
+    texto: 'Corridas cerradas, con su merma.',
   );
 
   @override
@@ -96,13 +101,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.historial;
+    final lista = svc.historialFiltrado;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(context, svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(context, svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por sabor, lote, tanque, turno, responsable…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay corridas finalizadas.',
@@ -285,6 +303,7 @@ class _TarjetaCorrida extends StatelessWidget {
                   child: Text('${c.sabor ?? ''} · ${c.presentacion ?? ''}',
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
+                if (c.sinSubir) const ChipSinSubir(),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(

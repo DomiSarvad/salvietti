@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:salvietti_control/features/soplado/models/soplado_modelos.dart';
 import 'package:salvietti_control/features/soplado/repositories/soplado_repository.dart';
 import 'package:salvietti_control/features/soplado/services/soplado_service.dart';
@@ -115,6 +116,8 @@ Future<SopladoService> _svc(String rol, [_Repo? repo]) async {
 }
 
 void main() {
+  setUpAll(() => initializeDateFormatting('es_BO'));
+
   group('permisos', () {
     test('sin permiso de ver no carga nada', () async {
       final s = await _svc('control_calidad');
@@ -263,6 +266,25 @@ void main() {
       expect(s.error, isNull);
       expect(s.corridas, hasLength(1));
       s.dispose();
+    });
+  });
+
+  group('buscador y reporte', () {
+    test('filtra el historial por fecha y arma el reporte con eso', () async {
+      final repo = _Repo([
+        _corrida(id: 1, estado: EstadoCorrida.finalizada),
+        _corrida(id: 2, estado: EstadoCorrida.enCurso),
+      ]);
+      final s = await _svc('soplado', repo);
+      expect(s.historialFiltrado, hasLength(1)); // lo en curso no es historial
+      s.filtrar(s.filtro.conDesde(DateTime(2026, 9, 23)));
+      expect(s.historialFiltrado, isEmpty); // la corrida es del 22/09
+      expect(s.reporte().filas, isEmpty);
+      s.filtrar(s.filtro.conDesde(DateTime(2026, 9, 22)));
+      final r = s.reporte();
+      expect(r.titulo, 'Corridas de Soplado');
+      expect(r.filas.single[3], 'Finalizada');
+      expect(r.filtros, contains('Desde 22/09/2026'));
     });
   });
 }

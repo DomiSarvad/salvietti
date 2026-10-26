@@ -17,8 +17,13 @@ class DevolucionDialog extends StatefulWidget {
 }
 
 class _DevolucionDialogState extends State<DevolucionDialog> {
-  late final _cantidad =
-      TextEditingController(text: fmtNum(widget.linea.disponibleParaDevolver, decimales: 3));
+  // Precargado SIN separador de miles (es un campo para editar, no para leer):
+  // "1.000,000" no lo entendería la lectura de abajo.
+  late final _cantidad = TextEditingController(
+      text: widget.linea.disponibleParaDevolver
+          .toStringAsFixed(3)
+          .replaceFirst(RegExp(r'\.?0+$'), '')
+          .replaceAll('.', ','));
   final _motivo = TextEditingController();
   bool _guardando = false;
   String? _error;

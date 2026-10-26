@@ -85,7 +85,7 @@ void main() {
   test('el Gerente aprueba; para rechazar tiene que explicar el motivo', () async {
     final repo = _Repo()..lista = [_pedido(1, EstadoCompra.pendiente)];
     final g = await _svc(_gerente(), repo);
-    expect(g.filtro, EstadoCompra.pendiente); // entra directo a lo que tiene que resolver
+    expect(g.filtroEstado, EstadoCompra.pendiente); // entra directo a lo que tiene que resolver
     expect(await g.rechazar(repo.lista.first, '  '), contains('motivo'));
     expect(await g.aprobar(repo.lista.first, respuesta: ' Ok '), isNull);
     expect(repo.resueltos.single, {'id': 1, 'aprobar': true, 'respuesta': 'Ok'});

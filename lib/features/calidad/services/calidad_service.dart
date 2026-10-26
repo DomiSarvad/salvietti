@@ -3,6 +3,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/calidad_modelos.dart';
 import '../repositories/calidad_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas de Control de Calidad: quién registra un análisis, validación del
 /// formulario (Brix, pH, acción obligatoria si no conforme) y la bandeja de
@@ -100,4 +102,28 @@ class CalidadService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<AnalisisCalidad> get analisisFiltrados => filtro.aplicar(analisis,
+      texto: (x) => <String?>[x.sabor, x.nLote == null ? null : 'lote ${x.nLote}', x.resultado == 'conforme' ? 'conforme' : 'no conforme', x.aspecto, x.accionTomada, x.responsableNombre, x.observaciones].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Análisis de Control de Calidad',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Sabor', 'Lote', 'Brix', 'pH', 'Aspecto', 'Resultado', 'Acción tomada', 'Responsable'],
+        filas: [
+          for (final x in analisisFiltrados) [x.fecha, x.sabor, x.nLote, x.brixDiluido, x.ph, x.aspecto, x.resultado == 'conforme' ? 'Conforme' : 'No conforme', x.accionTomada, x.responsableNombre]
+        ],
+      );
 }

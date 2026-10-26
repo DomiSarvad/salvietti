@@ -84,36 +84,32 @@ class _VistaState extends State<_Vista> {
   final _pasoAlmacenes = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Tus almacenes',
-    texto: 'Un vistazo rápido: rojo, amarillo o verde según el peor ítem de cada uno. '
-        'Tocá una tarjeta para entrar directo a ese almacén.',
+    texto: 'Color según el peor ítem. Tocá para entrar.',
   );
   final _pasoMenorStock = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Ítems con menor stock',
-    texto: 'Lo más urgente primero: los críticos, después los bajos, y recién ahí por '
-        'cantidad.',
+    texto: 'Lo más urgente primero.',
   );
   final _pasoMovimientos = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Movimientos por almacén',
-    texto: 'De qué almacén vienen los últimos movimientos registrados.',
+    texto: 'De dónde vienen los últimos movimientos.',
   );
   final _pasoMermas = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Mermas por área',
-    texto: '% de merma de cada área sobre lo producido; en rojo, lo que superó el 3 %.',
+    texto: '% de merma; en rojo, más del 3 %.',
   );
   final _pasoPlan = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Plan de producción de hoy',
-    texto: 'Lo que armó el Jefe de Producción para hoy. Tocá la tarjeta para ir a esa '
-        'pantalla.',
+    texto: 'Tocá para ver el plan del día.',
   );
   final _pasoEnRiesgo = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'En riesgo de desabastecimiento',
-    texto: 'Ítems con 7 días o menos de existencia estimada, para reponer antes de que '
-        'falten.',
+    texto: 'Ítems con 7 días o menos de stock.',
   );
 
   @override
@@ -199,7 +195,10 @@ class _VistaState extends State<_Vista> {
               BotonAyuda(idTour: 'inicio', pasos: _pasosAyuda),
             ]),
             // Qué áreas están sin internet (sus datos de acá pueden estar atrasados).
-            const AvisoConexionAreas(roles: Rol.todos, margen: EdgeInsets.only(top: 12)),
+            // Sin Gerencia: solo mira informes, no carga datos que otros esperen.
+            AvisoConexionAreas(
+                roles: [for (final r in Rol.todos) if (!Rol.soloInformes.contains(r)) r],
+                margen: const EdgeInsets.only(top: 12)),
             const SizedBox(height: 16),
             _pasoAlmacenes.envolver(
               Wrap(

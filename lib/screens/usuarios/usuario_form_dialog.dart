@@ -26,6 +26,9 @@ class UsuarioFormDialog extends StatefulWidget {
   /// esa tabla; el Gerente puede completarlos o corregirlos desde acá.
   final DatosEmpleado? datos;
   final bool datosDisponibles;
+
+  /// En el celular se abre como página (sin marco de diálogo).
+  final bool comoPagina;
   const UsuarioFormDialog({
     super.key,
     this.usuario,
@@ -33,6 +36,7 @@ class UsuarioFormDialog extends StatefulWidget {
     this.avisoCorreo,
     this.datos,
     this.datosDisponibles = false,
+    this.comoPagina = false,
   });
 
   @override
@@ -181,18 +185,9 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
     final inicial = nombre.isNotEmpty ? nombre[0].toUpperCase() : null;
     final esUnoMismo = _esUnoMismo;
 
-    return Dialog(
-      insetPadding: const EdgeInsets.all(16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: anchoDialogo(context, 420),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+    final formulario = <Widget>[
               DialogBanner(
-                onCerrar: () => Navigator.pop(context, false),
+                onCerrar: widget.comoPagina ? null : () => Navigator.pop(context, false),
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration:
@@ -339,8 +334,8 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
                   ],
                 ),
               ),
-              const Divider(height: 1),
-              Padding(
+    ];
+    final acciones = Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                 // OverflowBar, no Row: sin un Expanded, "Cancelar" + "Guardar
                 // cambios" no siempre entran en el ancho del diálogo en un
@@ -366,8 +361,28 @@ class _UsuarioFormDialogState extends State<UsuarioFormDialog> {
                     ),
                   ],
                 ),
-              ),
-            ],
+              );
+
+    // En el celular, página a pantalla completa (ver abrirPaginaODialogo):
+    // el formulario se desplaza y los botones quedan fijos abajo.
+    if (widget.comoPagina) {
+      return Column(children: [
+        Expanded(child: SingleChildScrollView(child: Column(children: formulario))),
+        const Divider(height: 1),
+        acciones,
+      ]);
+    }
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: anchoDialogo(context, 420),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [...formulario, const Divider(height: 1), acciones],
           ),
         ),
       ),

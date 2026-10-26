@@ -267,12 +267,16 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            // Wrap y no Row: en un celular el botón dejaba a la fecha tan
+            // angosta que se partía en tres líneas ("24/10/2" / "026").
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text('Fecha: ${fmtFecha(DateTime.now())}',
-                      style: const TextStyle(color: Colors.black54)),
-                ),
+                Text('Fecha: ${fmtFecha(DateTime.now())}',
+                    style: const TextStyle(color: Colors.black54)),
                 OutlinedButton.icon(
                   onPressed: _agregarFila,
                   icon: const Icon(Icons.add, size: 18),
@@ -411,15 +415,20 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
                   style: TextStyle(fontSize: 11, color: Colors.black54)),
             ),
             const SizedBox(height: 12),
+            // Wrap y no Row: "Usuario: … Perfil: …" no entraba en un celular
+            // (franja amarilla de "RIGHT OVERFLOWED"); así pasa a dos líneas.
             Container(
+              width: double.infinity,
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.primario,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 16,
+                runSpacing: 2,
                 children: [
                   Text('Usuario: ${usuario.nombreCompleto}',
                       style: const TextStyle(
@@ -437,14 +446,17 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar')),
-        FilledButton(
+        // Guarda los datos (las áreas trabajan con ellos) y sigue directo a la
+        // foto para mandar por WhatsApp (ver ProduccionPlannerScreen._armarPlan).
+        FilledButton.icon(
           onPressed: (_filas.isEmpty || _guardando) ? null : _guardarPlan,
-          child: _guardando
+          icon: _guardando
               ? const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Guardar plan'),
+              : const Icon(Icons.share, size: 18),
+          label: const Text('Guardar y compartir'),
         ),
       ],
     );

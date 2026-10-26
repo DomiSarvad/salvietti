@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/filas_sin_subir.dart';
 import '../models/llenadora_modelos.dart';
 
 /// Acceso a datos de Llenadora. Las escrituras pasan por funciones del
@@ -94,7 +95,29 @@ class SupabaseLlenadoraRepository implements LlenadoraRepository {
         .order('hora_inicio', ascending: false)
         .limit(limite)
         .timeout(SupabaseService.timeoutRed);
-    return [for (final f in filas) CorridaLlenadora.fromMap(f)];
+    return [...await _sinSubir(), for (final f in filas) CorridaLlenadora.fromMap(f)];
+  }
+
+  /// Corridas iniciadas sin internet que siguen en la cola (ver filasSinSubir).
+  Future<List<CorridaLlenadora>> _sinSubir() async {
+    final filas = filasSinSubir('llenadora_iniciar_corrida',
+        cierran: const ['llenadora_finalizar_corrida', 'llenadora_anular_corrida']);
+    if (filas.isEmpty) return const [];
+    var sab = <int, String>{}, pre = <int, String>{};
+    try {
+      sab = {for (final s in await sabores()) s.id: s.nombre};
+      pre = {for (final p in await presentaciones()) p.id: p.nombre};
+    } catch (_) {
+      // Sin copia de los catálogos: la tarjeta sale sin nombres, pero sale.
+    }
+    return [
+      for (final f in filas)
+        CorridaLlenadora.fromMap({
+          ...f,
+          'sabores': {'nombre': sab[f['sabor_id']]},
+          'presentaciones': {'nombre': pre[f['presentacion_id']]},
+        }),
+    ];
   }
 
   @override

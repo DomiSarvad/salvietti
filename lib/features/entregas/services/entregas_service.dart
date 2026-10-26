@@ -3,6 +3,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/entregas_modelos.dart';
 import '../repositories/entregas_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Pestañas de la bandeja de pedidos.
 enum BandejaPedidos {
@@ -268,4 +270,28 @@ class EntregasService extends ChangeNotifier {
 
   static String _n(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(3);
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<Pedido> get visiblesFiltrados => filtro.aplicar(visibles,
+      texto: (x) => <String?>['#${x.id}', x.areaDestino, x.almacenOrigen, x.motivo, x.solicitanteNombre, x.entregadoPorNombre, x.estado.etiqueta].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Pedidos a Almacén',
+        filtros: filtro.describir(),
+        columnas: const ['N°', 'Fecha', 'Área', 'Almacén', 'Estado', 'Solicitante', 'Líneas', 'Entregado por', 'Motivo'],
+        filas: [
+          for (final x in visiblesFiltrados) [x.id, x.fecha, x.areaDestino, x.almacenOrigen, x.estado.etiqueta, x.solicitanteNombre, x.lineas.length, x.entregadoPorNombre, x.motivo]
+        ],
+      );
 }

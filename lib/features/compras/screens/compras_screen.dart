@@ -9,6 +9,7 @@ import '../repositories/compras_repository.dart';
 import '../services/compras_service.dart';
 import '../widgets/detalle_pedido_compra_dialog.dart';
 import '../widgets/nuevo_pedido_compra_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Pedidos de compra: Almacén pide comprar (varios ítems) y el Gerente
 /// aprueba o rechaza. Solo UI; las reglas viven en el service.
@@ -36,13 +37,12 @@ class _VistaState extends State<_Vista> {
   final _pasoNuevo = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Nuevo pedido de compra',
-    texto: 'Armá el pedido con todos los ítems que hay que comprar. Le llega al Gerente '
-        'por la campana; cuando lo aprueba o rechaza, te llega la respuesta acá y en tu campana.',
+    texto: 'Lo que hay que comprar. Lo aprueba el Gerente.',
   );
   final _pasoFiltros = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Filtrar por estado',
-    texto: 'Pendientes (esperando al Gerente), aprobados, rechazados o anulados.',
+    texto: 'Pendientes, aprobados, rechazados o anulados.',
   );
 
   @override
@@ -85,14 +85,27 @@ class _VistaState extends State<_Vista> {
       );
     }
 
-    final lista = svc.visibles;
+    final lista = svc.visiblesFiltrados;
     // Lista perezosa: el encabezado es el ítem 0 (siempre montado, para el tour).
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por ítem, solicitante, motivo, N°…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(
@@ -136,16 +149,16 @@ class _VistaState extends State<_Vista> {
           children: [
             ChoiceChip(
               label: const Text('Todos'),
-              selected: svc.filtro == null,
-              onSelected: (_) => svc.filtrar(null),
+              selected: svc.filtroEstado == null,
+              onSelected: (_) => svc.filtrarEstado(null),
             ),
             for (final e in EstadoCompra.values)
               ChoiceChip(
                 label: Text(e == EstadoCompra.pendiente && svc.pendientes > 0
                     ? '${e.etiqueta} (${svc.pendientes})'
                     : e.etiqueta),
-                selected: svc.filtro == e,
-                onSelected: (_) => svc.filtrar(e),
+                selected: svc.filtroEstado == e,
+                onSelected: (_) => svc.filtrarEstado(e),
               ),
           ],
         )),

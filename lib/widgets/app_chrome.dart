@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
 import '../screens/perfil/perfil_dialog.dart';
+import '../shared/pagina_o_dialogo.dart';
 import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 
@@ -14,8 +15,9 @@ class AppTopBar extends StatelessWidget {
   final VoidCallback? onMenu;
   const AppTopBar({super.key, required this.onNavegar, this.onMenu});
 
-  void _abrirPerfil(BuildContext context) =>
-      showDialog(context: context, builder: (_) => const PerfilDialog());
+  /// En el celular, página a pantalla completa; en la compu, una ventana.
+  void _abrirPerfil(BuildContext context) => abrirPaginaODialogo(context,
+      titulo: 'Mi perfil', builder: (pagina) => PerfilDialog(comoPantalla: pagina));
 
   @override
   Widget build(BuildContext context) {

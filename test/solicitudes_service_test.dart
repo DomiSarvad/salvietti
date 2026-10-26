@@ -109,11 +109,28 @@ void main() {
       final s = await _svc('gerente', repo);
       expect(s.pendientesDeAprobar, 2);
       expect(s.visibles.map((x) => x.id), [1, 2]); // porAprobar: cualquiera pendiente
-      s.elegirBandeja(BandejaSolicitudes.mias);
-      expect(s.visibles.map((x) => x.id), [1]);
       s.elegirBandeja(BandejaSolicitudes.resueltas);
       expect(s.visibles.map((x) => x.id), [3, 4]);
     });
+
+    test('el Gerente no tiene "Mis solicitudes" (no pide); quien pide no tiene "Por aprobar"',
+        () async {
+      final gerente = await _svc('gerente');
+      expect(gerente.bandejas, [BandejaSolicitudes.porAprobar, BandejaSolicitudes.resueltas]);
+      gerente.elegirBandeja(BandejaSolicitudes.mias);
+      expect(gerente.bandeja, BandejaSolicitudes.porAprobar); // se ignora
+
+      final almacen = await _svc('almacen');
+      expect(almacen.bandejas, [BandejaSolicitudes.mias]);
+    });
+  });
+
+  test('la constancia se puede imprimir solo cuando ya se resolvió (aprobada o rechazada)',
+      () async {
+    final s = await _svc('almacen');
+    expect(s.puedeImprimir(_solicitud(estado: EstadoSolicitud.pendiente)), isFalse);
+    expect(s.puedeImprimir(_solicitud(estado: EstadoSolicitud.aprobada)), isTrue);
+    expect(s.puedeImprimir(_solicitud(estado: EstadoSolicitud.rechazada)), isTrue);
   });
 
   group('crear', () {

@@ -4,6 +4,7 @@ import '../core/constants.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_chrome.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/aviso_sincronizacion.dart';
 import '../features/dashboard/screens/dashboard_screen.dart';
 import '../features/inventario/screens/almacenes_screen.dart';
 import '../features/recepciones/screens/recepciones_screen.dart';
@@ -143,6 +144,27 @@ class _HomeShellState extends State<HomeShell> {
     'manual': 'Manual de usuario',
   };
 
+  /// Qué pendientes sin subir muestra la banda de cada pantalla (por cómo
+  /// empieza su descripción, ver `ClienteOffline.describir`). Inicio muestra
+  /// todos; una pantalla que no está acá solo muestra los rechazados.
+  static const _pendientesDe = <String, List<String>?>{
+    'dashboard': null,
+    'almacenes': ['Almacenes'],
+    'recepciones': ['Recepciones'],
+    'entregas': ['Entregas', 'Pedido a Almacén'],
+    'solicitudes': ['Solicitud'],
+    'compras': ['Pedidos de compra'],
+    'soplado': ['Soplado'],
+    'jarabes': ['Jarabes', 'Pedido a Almacén'],
+    'calidad': ['Calidad'],
+    'llenadora': ['Llenadora'],
+    'codificacion': ['Codificación'],
+    'salidas': ['Registro de salidas'],
+    'mermas': ['Mermas'],
+    'soda_caustica': ['Soda Cáustica'],
+    'produccion': ['Producción del día'],
+  };
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
@@ -160,6 +182,12 @@ class _HomeShellState extends State<HomeShell> {
           esInicio: _ruta == 'dashboard',
           onInicio: () => _navegar('dashboard'),
         ),
+        // En Configuración ya está la lista completa, con Reintentar/Descartar.
+        if (_ruta != 'configuracion')
+          BandaSincronizacion(
+            prefijos: _pendientesDe.containsKey(_ruta) ? _pendientesDe[_ruta] : const [],
+            onRevisar: () => _navegar('configuracion'),
+          ),
         Expanded(child: _pantalla()),
       ],
     );

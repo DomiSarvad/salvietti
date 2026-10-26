@@ -6,6 +6,8 @@ import '../../../utils/texto.dart';
 import '../../inventario/models/unidad_medida.dart';
 import '../models/recepciones_modelos.dart';
 import '../repositories/recepciones_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 enum VistaRecepciones { lista, reclamos }
 
@@ -125,27 +127,51 @@ class RecepcionesService extends ChangeNotifier {
 
   // ---------------------------------------------------------------- filtros
 
-  void buscar(String texto) {
-    busqueda = texto;
+  /// Buscador común (texto + Desde/Hasta): define qué se ve y qué sale en el
+  /// reporte PDF/Excel.
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    busqueda = f.texto;
     notifyListeners();
   }
+
+  void buscar(String texto) => filtrar(filtro.conTexto(texto));
 
   void alternarSoloConDiferencia() {
     soloConDiferencia = !soloConDiferencia;
     notifyListeners();
   }
 
-  List<RecepcionDetalle> get visibles {
-    final q = sinTildes(busqueda.trim());
-    return recepciones.where((r) {
-      if (soloConDiferencia && r.diferencia.abs() < 1e-9) return false;
-      if (q.isEmpty) return true;
-      return sinTildes(r.detalle).contains(q) ||
-          sinTildes(r.proveedor ?? '').contains(q) ||
-          sinTildes(r.nFactura ?? '').contains(q) ||
-          sinTildes(r.nLote ?? '').contains(q);
-    }).toList();
-  }
+  /// Busca en código, ítem, proveedor, factura, lote y transportador: todas
+  /// las palabras, en cualquier orden.
+  List<RecepcionDetalle> get visibles => filtro.aplicar(
+        recepciones.where((r) => !soloConDiferencia || r.diferencia.abs() >= 1e-9),
+        texto: (r) => <String?>[r.codigo, r.detalle, r.proveedor, r.nFactura, r.nLote, r.transportador]
+            .whereType<String>()
+            .join(' '),
+        fecha: (r) => r.fecha,
+      );
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Recepciones',
+        filtros: [
+          filtro.describir(),
+          if (soloConDiferencia) 'Solo con diferencia',
+        ].join('   ·   '),
+        columnas: const [
+          'Fecha', 'Código', 'Ítem', 'Proveedor', 'Factura', 'Cant. factura', 'Cant. real',
+          'Diferencia', 'Unidad', 'Lote', 'Vence',
+        ],
+        filas: [
+          for (final r in visibles)
+            [
+              r.fecha, r.codigo, r.detalle, r.proveedor, r.nFactura, r.cantidadFactura, r.cantidadReal,
+              r.diferencia, r.unidad, r.nLote, r.fechaVencimiento,
+            ]
+        ],
+      );
 
   Future<void> cambiarVista(VistaRecepciones nueva) async {
     if (vista == nueva) return;

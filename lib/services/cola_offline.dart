@@ -191,16 +191,62 @@ class ColaOffline {
   /// El servidor la rechazó: sale de la cola (para no trabar las demás) y
   /// queda en la lista de errores con el motivo.
   static Future<void> marcarError(OperacionOffline op, String motivo) async {
-    await _errores.add(op.toMap(error: motivo));
+    // Se recuerda su lugar en la cola, para que "Reintentar" la devuelva ahí.
+    await _errores.add(op.toMap(error: motivo)..['claveCola'] = op.clave);
     await _cola.delete(op.clave);
     cambios.value++;
   }
 
-  /// La vuelve a poner al final de la cola, sin el error.
+  /// La vuelve a la cola, sin el error, en el MISMO lugar que tenía (antes
+  /// que lo que se hizo después): si se pusiera al final, quedaría detrás de
+  /// operaciones posteriores y el orden real se invertiría (ej. dos salidas
+  /// del mismo ítem). Si ese lugar ya está ocupado, va al final.
   static Future<void> reintentar(OperacionOffline op) async {
-    await _cola.add(op.toMap()..['error'] = null);
+    final original = (_errores.get(op.clave) as Map?)?['claveCola'];
+    final m = op.toMap()..['error'] = null;
+    if (original is int && !_cola.containsKey(original)) {
+      await _cola.put(original, m);
+    } else {
+      await _cola.add(m);
+    }
     await _errores.delete(op.clave);
     cambios.value++;
+  }
+
+  // -------------------- Lo creado sin internet --------------------
+
+  /// Las RPC [funcion] (ej. `soplado_iniciar_corrida`) que [usuario] hizo sin
+  /// internet y siguen en la cola, con su id provisorio y lo que se mandó.
+  /// Sirve para mostrarlas en la lista mientras no suben (si no, una corrida
+  /// iniciada sin internet no aparece y no se puede finalizar). Se descartan
+  /// las que ya tienen en la cola una operación de [cierran] (finalizar,
+  /// anular) con `p_id` = ese id: ya no están "en curso".
+  static List<({int id, Map<String, dynamic> datos, DateTime creadoEn})> rpcSinSubir(
+    String funcion, {
+    required String? usuario,
+    List<String> cierran = const [],
+  }) {
+    if (usuario == null) return const [];
+    Map<String, dynamic>? cuerpo(OperacionOffline op) {
+      try {
+        final v = jsonDecode(utf8.decode(op.cuerpo));
+        return v is Map ? Map<String, dynamic>.from(v) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    bool es(OperacionOffline op, String f) => Uri.parse(op.url).path.endsWith('/rpc/$f');
+    final mias = pendientes().where((o) => o.usuario == usuario).toList();
+    final cerrados = <Object?>{
+      for (final op in mias)
+        if (cierran.any((f) => es(op, f))) cuerpo(op)?['p_id'],
+    };
+    return [
+      for (final op in mias)
+        if (op.idTemporal != null && es(op, funcion) && !cerrados.contains(op.idTemporal))
+          (id: op.idTemporal!, datos: cuerpo(op) ?? const {}, creadoEn: op.creadoEn),
+    ];
   }
 
   static Future<void> descartar(OperacionOffline op) async {

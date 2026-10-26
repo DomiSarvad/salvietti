@@ -3,6 +3,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/mermas_modelos.dart';
 import '../repositories/mermas_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas de Mermas: quién puede registrar merma de cada área (además del
 /// permiso genérico del módulo), causas válidas y validación de cantidades.
@@ -114,4 +116,28 @@ class MermasService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<EventoMerma> get consolidadoFiltrado => filtro.aplicar(consolidado,
+      texto: (x) => <String?>[x.area, x.sabor, x.presentacion, x.motivo].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Eventos de merma',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Área', 'Sabor', 'Presentación', 'Merma', 'Producido', '% merma', 'Alerta', 'Motivo'],
+        filas: [
+          for (final x in consolidadoFiltrado) [x.fecha, x.area, x.sabor, x.presentacion, x.totalMerma, x.producido, x.porcentaje, x.alerta ? 'Sí' : 'No', x.motivo]
+        ],
+      );
 }

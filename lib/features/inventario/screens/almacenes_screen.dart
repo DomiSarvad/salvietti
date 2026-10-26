@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -8,7 +9,7 @@ import '../../../utils/notificaciones.dart';
 import '../models/categoria_inv.dart';
 import '../models/existencia_item.dart';
 import '../repositories/inventario_repository.dart';
-import '../services/inventario_pdf_service.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 import '../services/inventario_service.dart';
 import 'balance_screen.dart';
 import '../widgets/conteo_dialog.dart';
@@ -16,18 +17,6 @@ import '../widgets/item_form_dialog.dart';
 import '../widgets/salida_directa_dialog.dart';
 import '../widgets/movimientos_dialog.dart';
 
-String _textoSituacion(SituacionStock s) {
-  switch (s) {
-    case SituacionStock.critico:
-      return 'Crítico';
-    case SituacionStock.bajo:
-      return 'Bajo';
-    case SituacionStock.optimo:
-      return 'Óptimo';
-    case SituacionStock.sinDatos:
-      return 'Sin consumo';
-  }
-}
 
 /// Inventario por almacenes (General, Jarabes, Soplado), ordenado como se
 /// busca en un almacén real: se entra por TIPO de artículo (Tapas,
@@ -46,7 +35,10 @@ class AlmacenesScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => InventarioService(SupabaseInventarioRepository(), usuario)
         ..iniciar(almacenPreferido: almacenInicial),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<InventarioService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -62,21 +54,17 @@ class _VistaState extends State<_Vista> {
   final _pasoAlmacenChips = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Almacenes',
-    texto: 'Elegís acá con qué almacén trabajar (General, Jarabes, Soplado, Soda '
-        'Cáustica), según a cuáles tenga acceso tu rol.',
+    texto: 'Elegí con qué almacén trabajar.',
   );
   final _pasoBuscador = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Buscador',
-    texto: 'Busca en TODO el almacén, no solo en la categoría donde estés. Escribí '
-        '"crítico", "bajo" u "óptimo" para filtrar por ese estado, o varias palabras '
-        'para que coincidan todas.',
+    texto: 'Busca en todo el almacén.',
   );
   final _pasoCategorias = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Categorías',
-    texto: 'Al entrar a una categoría ya se ven TODOS los ítems de ahí y de sus '
-        'subdivisiones — no hace falta seguir entrando una por una.',
+    texto: 'Muestra los ítems de la categoría y sus subdivisiones.',
   );
 
   @override
@@ -150,8 +138,9 @@ class _VistaState extends State<_Vista> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              'Elegí una categoría para ver sus ítems, buscá por nombre o código, '
-              'o tocá "Ver todo".',
+              'Elegí una categoría para ver sus ítems, buscá por nombre o código, o '
+              'elegí fechas para ver qué se movió. El PDF y el Excel, sin filtros, '
+              'salen con todo el almacén.',
               style: TextStyle(color: Colors.black54),
             ),
           )
@@ -250,43 +239,6 @@ class _Cabecera extends StatelessWidget {
     );
   }
 
-  /// El reporte lleva EXACTAMENTE lo que se ve en la tabla en ese momento:
-  /// el almacén, la categoría abierta, lo escrito en el buscador y el filtro
-  /// "Pedido" — no un listado aparte que haya que volver a filtrar.
-  Future<void> _imprimir(BuildContext context) async {
-    final almacen = svc.almacenes.firstWhere((a) => a.id == svc.almacenId);
-    final usuario = context.read<AuthService>().usuarioActual!;
-    final filas = [
-      for (final e in svc.visibles)
-        FilaReporteInventario(
-          codigo: e.codigo,
-          detalle: e.detalle,
-          ubicacion: svc.textoRutaRelativa(e.categoriaId),
-          cantidadSistema: e.cantidadSistema,
-          unidad: e.unidad,
-          stockMinimo: e.stockMinimo,
-          diasExistencia: e.diasExistencia,
-          estado: _textoSituacion(svc.situacion(e)),
-        ),
-    ];
-    try {
-      final bytes = await InventarioPdfService.reporte(
-        almacenNombre: almacen.nombre,
-        categoriaTexto: svc.categoriaFiltro == null ? null : svc.textoRuta(svc.categoriaFiltro!),
-        busqueda: svc.busqueda,
-        soloPedido: svc.soloPedido,
-        responsable: usuario.nombreCompleto,
-        filas: filas,
-      );
-      if (!context.mounted) return;
-      final mensaje = await InventarioPdfService.guardar(bytes, almacen.nombre);
-      if (!context.mounted) return;
-      mostrarExito(context, mensaje);
-    } catch (_) {
-      if (context.mounted) mostrarError(context, 'No se pudo generar el reporte.');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final actual = svc.categoriaFiltro;
@@ -355,46 +307,40 @@ class _Cabecera extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        pasoBuscador.envolver(Row(
+        // Buscador común: texto, Desde/Hasta y PDF/Excel de lo que se ve. Con
+        // fechas, la tabla muestra lo que se movió en ese período (entradas y
+        // salidas). En la raíz sin filtros, el reporte sale con todo el almacén.
+        pasoBuscador.envolver(Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: TextField(
-                onChanged: svc.buscar,
-                decoration: InputDecoration(
-                  hintText: 'Buscar por detalle o código…',
-                  prefixIcon: const Icon(Icons.search),
-                  isDense: true,
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por detalle o código…',
+            ),
+            if (svc.muestraFiltroPedido) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  label: const Text('Pedido'),
+                  avatar: const Icon(Icons.shopping_cart_outlined, size: 16),
+                  selected: svc.soloPedido,
+                  onSelected: (_) => svc.alternarSoloPedido(),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            FilterChip(
-              label: const Text('Pedido'),
-              avatar: const Icon(Icons.shopping_cart_outlined, size: 16),
-              selected: svc.soloPedido,
-              onSelected: (_) => svc.alternarSoloPedido(),
-            ),
-            if (actual == null) ...[
-              const SizedBox(width: 6),
-              FilterChip(
-                label: const Text('Ver todo'),
-                selected: svc.verTodo,
-                onSelected: (_) => svc.alternarVerTodo(),
-              ),
             ],
-            const SizedBox(width: 6),
-            IconButton(
-              tooltip: svc.mostrarTabla
-                  ? 'Imprimir reporte de lo que se ve acá'
-                  : 'Elegí una categoría o buscá algo para poder imprimir un reporte',
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              color: AppColors.primario,
-              onPressed: svc.mostrarTabla ? () => _imprimir(context) : null,
-            ),
+            if (svc.cargandoPeriodo)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (svc.errorPeriodo != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(svc.errorPeriodo!, style: const TextStyle(color: Color(0xFFDC2626))),
+              ),
           ],
         )),
         const SizedBox(height: 8),
@@ -663,16 +609,20 @@ class _TablaItems extends StatelessWidget {
           dataRowMinHeight: 52,
           dataRowMaxHeight: 60,
           columnSpacing: 22,
-          columns: const [
-            DataColumn(label: Text('Código')),
-            DataColumn(label: Text('Detalle')),
-            DataColumn(label: Text('Ubicación')),
-            DataColumn(label: Text('Stock'), numeric: true),
-            DataColumn(label: Text('Últ. conteo'), numeric: true),
-            DataColumn(label: Text('Mínimo'), numeric: true),
-            DataColumn(label: Text('Días'), numeric: true),
-            DataColumn(label: Text('Estado')),
-            DataColumn(label: Text('Acciones')),
+          columns: [
+            const DataColumn(label: Text('Código')),
+            const DataColumn(label: Text('Detalle')),
+            const DataColumn(label: Text('Ubicación')),
+            const DataColumn(label: Text('Stock'), numeric: true),
+            const DataColumn(label: Text('Últ. conteo'), numeric: true),
+            const DataColumn(label: Text('Mínimo'), numeric: true),
+            const DataColumn(label: Text('Días'), numeric: true),
+            const DataColumn(label: Text('Estado')),
+            if (svc.periodoActivo) ...const [
+              DataColumn(label: Text('Entradas'), numeric: true),
+              DataColumn(label: Text('Salidas'), numeric: true),
+            ],
+            const DataColumn(label: Text('Acciones')),
           ],
           rows: [for (final e in items) _fila(context, e)],
         ),
@@ -713,9 +663,15 @@ class _TablaItems extends StatelessWidget {
       DataCell(Text(e.stockMinimo == null ? '—' : fmtNum(e.stockMinimo))),
       DataCell(Text(e.diasExistencia == null ? '—' : fmtNum(e.diasExistencia, decimales: 1))),
       DataCell(Wrap(spacing: 6, children: [
-        _pill(_textoSituacion(sit), _colorSituacion(sit)),
+        _pill(InventarioService.textoSituacion(sit), _colorSituacion(sit)),
         if (svc.necesitaPedido(e)) _pill('Pedido', const Color(0xFFDC2626)),
       ])),
+      if (svc.periodoActivo) ...[
+        DataCell(Text(fmtNum(svc.movimientoDe(e)!.entradas),
+            style: const TextStyle(color: Color(0xFF16A34A)))),
+        DataCell(Text(fmtNum(svc.movimientoDe(e)!.salidas),
+            style: const TextStyle(color: Color(0xFFDC2626)))),
+      ],
       DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
         IconButton(
           tooltip: 'Movimientos',

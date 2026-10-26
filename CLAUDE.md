@@ -154,6 +154,13 @@ módulo `compras` (Almacén ver/crear, Gerente ver/aprobar, Jefe de Producción 
 `compras_anular` (solo quien lo hizo y pendiente). No mueve stock (eso es Recepciones). Agrega
 `compras_pedidos` y `solicitudes_gerencia` a `supabase_realtime` para la campana.
 
+→ v44 (arreglo): pgcrypto vive en el esquema `extensions` de Supabase y las funciones `security definer`
+que la usan fijaban `search_path = public, auth, pg_temp`, así que no la encontraban: "Nuevo usuario"
+fallaba con `function gen_salt(unknown) does not exist` (`crear_usuario_admin`) y la confirmación de
+recetas del Gerente igual (`_verificar_clave_actual`). v44 les agrega `extensions` con `alter function
+... set search_path` (v16/v37 también corregidos). Toda función nueva que use `crypt`/`gen_salt` lleva
+`extensions` en su search_path.
+
 ### Gerente: Informes, campana y menú (2026-10-23)
 
 - **Menú**: `Rol.soloInformes` (`{gerente}`) + `Usuario.soloInformes`: el sidebar oculta las pantallas
@@ -161,13 +168,47 @@ módulo `compras` (Almacén ver/crear, Gerente ver/aprobar, Jefe de Producción 
   para esos roles. Es solo presentación: NO se le sacaron permisos `ver` (los informes leen esas
   tablas y las políticas RLS los exigen), y las rutas siguen abriéndose desde la campana.
 - **Informes** (`features/informes/`): `InformesService.construir(area, rango)` arma KPIs + series +
-  tabla por área, solo con lo FINALIZADO; semana = barra por día (lun…dom), mes = barra por semana
-  (`RangoInforme`). Áreas: General (resume las demás), Jarabes, Soplado/Llenadora/Codificación
+  tabla por área, solo con lo FINALIZADO; semana = barra por día (lun…dom), mes = barra por semana,
+  año = barra por mes, "Por fechas" (`RangoInforme.entre`, no pasa de hoy) = por día hasta 31 días, por
+  semana hasta ~4 meses, por mes si es más largo (`RangoInforme`). **Proyección**
+  (`InformesService.proyectar`): si el período está en curso, cada serie se estima al cierre al ritmo
+  promedio por día de lo que va (hoy cuenta); se dibuja apilado y claro sobre la barra real, con una
+  tarjeta "Proyección al cierre de…" y columnas "(estimado)" en el Excel. Todas las series son sumas,
+  por eso se puede proyectar así; una serie nueva que sea un promedio NO se debe proyectar con esto.
+  Controles con el mismo aspecto que `BarraFiltros`: buscador de texto + PDF/Excel, selector "Ver por"
+  (Semana/Mes/Año, `periodoBase`) con flechas, y Desde/Hasta que siempre muestran el rango visto
+  (elegir uno pasa a "Fechas"; la x vuelve al selector, `quitarFechas`). La búsqueda
+  (`InformesService.construir`) es dos cosas: si nombra un INDICADOR (etiqueta de KPI o nombre de
+  serie, ej. "botellas producidas") se ven solo esos KPIs/series/filas de la tabla que lo nombran, con
+  todos los datos (`InformeArea.soloIndicadores`); si no, filtra las FILAS antes de calcular (todo el
+  texto de la fila y sus joins, menos la fecha), pasado por una `Zone` (`_zonaTextoFilas`) y no por
+  un campo, porque una recarga en tiempo real puede armarse a la vez que otra. `InformeArea.busqueda`
+  va al encabezado y al nombre del archivo. Sin texto aclaratorio debajo del buscador (lo pidió el
+  usuario). **Gráfico** (2026-10-25): en un período en curso se dibuja solo hasta la barra de hoy
+  (`InformeArea.barrasHastaHoy`, lo pone `proyectar`): antes el año mostraba noviembre/diciembre con
+  lo estimado y parecía que hubo movimiento; lo que falta del año solo va en la tarjeta de proyección.
+  Botón "Ver más grande" (`_Grafico.ampliar`): pantalla completa, en el celular la pone horizontal y
+  la restaura al cerrar. **Comparar** (`InformesService.comparar`): arma también `rango.anterior()`
+  (mes pasado, año pasado…) y lo pone al lado en el mismo tono claro (`InformeArea.conAnterior`, ajusta
+  el largo: un mes tiene 4 o 5 semanas), más la tarjeta `_Comparacion` "a la misma altura" (si el
+  período está en curso compara solo hasta hoy en los dos, ej. Ene–Oct contra Ene–Oct). Va al PDF y
+  al Excel (columna "(período anterior)").
+- **Solicitudes como mensajería** (2026-10-25, solo el aspecto, sin tabla nueva: sigue siendo un
+  pedido y una respuesta): la lista es una bandeja de conversaciones (`FilaConversacion`) y cada una se
+  abre como chat (`ConversacionSolicitud`, pantalla propia con el mismo service): el pedido es el primer
+  mensaje, la respuesta de Gerencia la contestación, lo propio a la derecha; si está pendiente y se
+  puede aprobar, abajo hay una caja de respuesta con Rechazar/Aprobar (reemplazó a
+  `ResolverSolicitudDialog`, borrado). Pestañas por rol (`SolicitudesService.bandejas`): el Gerente no
+  tiene "Mis solicitudes" (no pide, solo tiene `solicitudes:ver`). La constancia PDF solo cuando ya se
+  resolvió (`puedeImprimir`), aprobada O rechazada (con "Motivo del rechazo" y el estado en un recuadro
+  de color), y es opcional. Áreas: General (resume las demás), Jarabes, Soplado/Llenadora/Codificación
   (`_corridas`, misma forma: producido vs merma, alerta > 3 %), Calidad, Producción terminada
   (`salidas_planilla`), Mermas (`mermas_consolidado`), Almacén (cuenta movimientos, no unidades, +
   pedidos de compra si hay v43), Soda Cáustica. `InformesExportService`: PDF (mismo estilo que el
   reporte de inventario, con `pw.Chart` de barras) y Excel (números como números). Ítem "Informes"
-  del menú, con permiso `informe_produccion:ver`.
+  del menú, con permiso `informe_produccion:ver`. Se actualizan en vivo (`InformesRepository.escucharCambios`
+  sobre todas sus tablas, recarga silenciosa con debounce de 1 s); v43 agrega a la publicación las que
+  faltaban (`calidad_analisis`, `salidas_reportes`, `salidas_reporte_lineas`, `soda_entregas`).
 - **Campana flotante** (`features/notificaciones/`, `CampanaFlotante` como `floatingActionButton`
   de `HomeShell`, abajo a la derecha): `CampanaService` cuenta pendientes por rol (compras por
   aprobar, solicitudes por resolver, recetas que esperan al Gerente / a Calidad / a Producción) y las
@@ -175,6 +216,63 @@ módulo `compras` (Almacén ver/crear, Gerente ver/aprobar, Jefe de Producción 
   Realtime sobre `compras_pedidos`/`solicitudes_gerencia`/`jarabes_recetas` + refresco cada 2 min.
   Tocar una fila navega a la ruta donde se resuelve.
 - Tests: `compras_service_test`, `informes_service_test`, `informes_export_test`, `campana_service_test`.
+
+### Informe general de Producción interactivo y perfil a pantalla completa (2026-10-26)
+
+- `informe_produccion_resumen` se pedía con `.limit(200)` SIN orden (quedaban 200 filas cualquiera,
+  podían faltar los días nuevos): ahora `order(fecha desc, sabor)`, y el service además ordena.
+- `InformeService`: `filtro` (BarraFiltros: sabor + Desde/Hasta), `soloDesvio`, `filtrados`, `porDia`
+  y `totales` (cajas esperadas/producidas, desviación total, cuántos con desvío > 3 %).
+- Pantalla: totales arriba, filtros, lista agrupada por día ("Hoy", "Ayer", fecha) con barra de
+  avance producido/esperado; tocar abre `_Detalle` a pantalla completa (desviación grande con su
+  explicación, preparados/esperado/producido, aviso de datos incompletos, merma por área con barras
+  y motivo). El `PasoAyuda` envuelve solo los totales: antes envolvía la lista y mantener apretada
+  una fila mostraba el globo encima de los datos.
+- **Páginas en el celular**: `abrirPaginaODialogo` (`lib/shared/pagina_o_dialogo.dart`) abre un formulario
+  como página a pantalla completa con barra NEGRA y flecha de volver (< 600 px) o como ventana en la
+  compu. Lo usan Mi perfil (`PerfilDialog(comoPantalla:)`) y el alta/edición de Usuarios
+  (`UsuarioFormDialog(comoPagina:)`); en modo página `DialogBanner` va sin X (`onCerrar: null`). Las
+  pantallas de detalle propias (Informe de Producción, conversación de Solicitudes) usan la misma barra
+  negra. Un formulario grande nuevo, igual.
+
+### Solicitudes como mensajería (2026-10-25)
+
+Solo el aspecto (decisión del usuario): sigue siendo un pedido y UNA respuesta, sin tabla nueva.
+La lista es una bandeja de mensajes (`FilaConversacion`: avatar con iniciales, asunto, último
+mensaje, hora, punto de color por estado) y tocar una fila abre `ConversacionSolicitud` (pantalla
+propia, mismo service con `ChangeNotifierProvider.value`): el pedido es una burbuja, la respuesta de
+Gerencia otra (propia a la derecha), y si está pendiente y quien mira aprueba, abajo hay una caja de
+texto con Aprobar/Rechazar — reemplazó a `ResolverSolicitudDialog` (borrado). Pestañas según el rol
+(`SolicitudesService.bandejas`): el Gerente no tiene "Mis solicitudes" (no pide), quien pide no tiene
+"Por aprobar". La constancia PDF solo cuando ya se resolvió (`puedeImprimir`), aprobada O rechazada
+(el usuario quiere el rechazo en papel, con "Motivo del rechazo"), y siempre opcional; el PDF
+destaca el estado en un recuadro de color.
+
+### Buscador común de las listas (texto + Desde/Hasta + PDF/Excel)
+
+Todas las listas con historial usan el mismo buscador, como pidió el usuario (modelo: un sistema con
+"Buscar" arriba, "Desde/Hasta" abajo y botones PDF/Excel):
+- `lib/shared/filtros/filtro_lista.dart` — `FiltroLista` (texto: todas las palabras en cualquier orden,
+  sin tildes; Desde/Hasta incluyen el día entero; `describir()` para el encabezado del reporte).
+- `lib/shared/filtros/barra_filtros.dart` — `BarraFiltros(filtro, onCambio, reporte, hint)`: el widget
+  (aplica el texto 250 ms después de dejar de escribir; si Desde > Hasta los da vuelta solo) y
+  `SinResultados` (≠ "todavía no hay registros").
+- `lib/shared/reportes/reporte_tabla.dart` — `ReporteTabla` con VALORES (num/DateTime/null, no texto)
+  + `ReporteTablaExport.pdf/excel`: en el PDF se formatean, en Excel los números quedan como número.
+- Cada service tiene `filtro`, `filtrar()`, una lista `…Filtrado(s)` y `reporte()` (lo filtrado = lo
+  que se imprime). Puesto en Soplado, Llenadora, Codificación, Jarabes, Calidad, Mermas, Soda Cáustica,
+  Pedidos de compra, Solicitudes, Entregas y Recepciones (reemplazó su buscador propio; el filtro "Con
+  diferencia" se suma) y Almacenes (ver abajo). En Pedidos de compra el filtro por estado pasó a llamarse `filtroEstado`/`filtrarEstado`.
+- `fmtNum` pasó a formato es-BO real: punto para miles, COMA para decimales (antes usaba punto para las
+  dos cosas: 1234,5 se veía "1.234.50"). Un campo editable NO se precarga con `fmtNum` (se rompe la
+  lectura con separador de miles): ver `devolucion_dialog.dart`.
+- El Gerente no ve el filtro "Pedido" de Almacenes (`InventarioService.muestraFiltroPedido`).
+- **Almacenes** también usa `BarraFiltros` (se sacó "Ver todo" y el PDF propio; `InventarioPdfService` se
+  borró): el texto es la búsqueda de siempre; las FECHAS muestran los ítems que tuvieron movimiento en
+  ese período con sus entradas/salidas (`InventarioRepository.movimientosPeriodo`, suma
+  `inv_movimientos` por ítem en [desde, hasta+1 día); ajustes según su signo), columnas extra en la
+  tabla y en el reporte. Sin filtros, en la raíz se ven solo las categorías, pero el PDF/Excel sale
+  con TODO el almacén (eso reemplaza a "Ver todo" para el reporte completo).
 
 ### Presencia de las áreas y tiempo real en Jarabes/Soplado
 
@@ -245,8 +343,8 @@ subdivisiones, la tabla de abajo ya muestra TODOS los ítems de esa categoría y
 ella (no hace falta bajar hasta la hoja del árbol) — se agregó un texto aclarando esto, porque no
 era obvio y llevaba a creer que había que seguir entrando a cada subcategoría para ver algo.
 
-Al lado del buscador de Almacenes hay un botón "Imprimir reporte" (ícono de PDF,
-`_Cabecera._imprimir`) que genera un PDF apaisado con EXACTAMENTE lo que se está viendo en la tabla
+(Reemplazado por `BarraFiltros`, ver "Buscador común de las listas".) Antes, al lado del buscador de
+Almacenes había un botón "Imprimir reporte" (ícono de PDF, `_Cabecera._imprimir`) que generaba un PDF apaisado con EXACTAMENTE lo que se está viendo en la tabla
 en ese momento — el buscador (y la categoría, y el filtro "Pedido") funcionan como el filtro del
 reporte, no hace falta armar uno aparte. `InventarioPdfService.reporte()`
 (`features/inventario/services/`) arma la tabla (código, detalle, ubicación, stock, mínimo, días,
@@ -266,6 +364,18 @@ siendo la de stock (`VerificacionInsumos`, ya existía: si falta insumo para la 
 "Iniciar" y ofrece mandar la solicitud a Almacén ahí mismo). Si falla la carga del plan (sin
 conexión, o no hay plan cargado hoy) la tarjeta simplemente no aparece; Jarabes sigue funcionando
 igual.
+
+**Plan del día y WhatsApp (2026-10-24)**: el plan se GUARDA en el sistema (las áreas trabajan con
+esos datos: Jarabes, Inicio, "Marcar hecho" con su descuento de stock), pero la FOTO de la planilla no:
+`ConstructorPlanDialog` ahora termina en "Guardar y compartir", y `ProduccionPlannerScreen._armarPlan`
+recarga el plan y abre solo `ProduccionCapturaDialog`, cuyo botón principal es "Compartir por WhatsApp"
+(`Share.shareXFiles` con la imagen en memoria, no queda archivo). "Descargar" (`FileSaver`) queda al
+costado, solo si la persona lo pide — antes, si no había panel de compartir, se guardaba sola. Pedido
+explícito del usuario: es diaria y llenaría el almacenamiento. El historial de planes se ve en
+**Informes → Plan de producción** (`InformesService._plan`: una fila por producto de cada día, con
+paquetes/botellas/litros planificados vs producidos; a diferencia del resto de Informes incluye lo
+pendiente, que es lo que interesa; alerta si el cumplimiento < 90 %). El rol que arma el plan es
+`jefe_produccion` (el "ingeniero" de v2; el usuario lo llama "jefe de ingeniería").
 
 El menú lateral tiene "Producción del día" (antes "Producción", a secas) justo después de "Inicio"
 en vez de casi al final: es lo que el Jefe de Producción entra a hacer todos los días, no algo
@@ -535,6 +645,33 @@ sin tocar ningún repositorio: `ClienteOffline` (`lib/services/cliente_offline.d
   funcionando). Una RPC nueva de solo lectura hay que sumarla a `_rpcLectura`, y una que deba exigir
   conexión a `_rpcSoloEnLinea` — si no, se trata como escritura y se encola.
 - Test: `test/cliente_offline_test.dart` (cliente HTTP falso, sin red real).
+- **Arreglos de la revisión del modo sin internet (2026-10-23)**:
+  1. *Doble registro con wifi sin salida*: los repositorios cortan a los 8 s (`timeoutRed`) pero el
+     pedido seguía y, al fallar tarde, se encolaba igual — la persona veía error, reintentaba, y se
+     subían las dos. Ahora el cliente real (`http_base.dart`, import condicional) tiene
+     `connectionTimeout` de 5 s (falla al CONECTAR = nunca salió = seguro encolar), y
+     `ClienteOffline.limiteParaEncolar` (7 s): una falla de red después de eso se devuelve como
+     error, no se encola. Lo que ve la persona y lo que pasa coinciden.
+  2. *Lo iniciado sin internet no aparecía*: `filasSinSubir` (`lib/shared/`) arma, desde la cola
+     (`ColaOffline.rpcSinSubir`), las corridas/preparados iniciados sin internet como filas "en curso"
+     con id provisorio, y los repositorios de Soplado/Llenadora/Codificación/Jarabes las suman en
+     `corridas()`/`preparados()` (mismo `fromMap`, sin cambiar services ni tests). Se pueden finalizar
+     sin internet; desaparecen solas al subir o al finalizarlas. Marcadas con `ChipSinSubir`
+     (`modelo.sinSubir` = id < 0); en Jarabes el lote dice "Lote al subir" (lo asigna el servidor).
+  3. *Rechazos poco visibles* y *pendientes que invitaban a repetir*: `BandaSincronizacion`
+     (`aviso_sincronizacion.dart`, puesta por `HomeShell` debajo de las migas): roja en TODAS las
+     pantallas mientras haya algo rechazado; ámbar con lo de esa pantalla aún sin subir
+     (`HomeShell._pendientesDe`, por prefijo de la descripción). Al agregar una RPC nueva, sumarle
+     nombre legible en `ClienteOffline._nombres` con el prefijo de su pantalla.
+  4. *Reintentar invertía el orden*: `marcarError` guarda `claveCola` y `reintentar` la devuelve a
+     su lugar original en la cola (si está libre).
+  5. *Login lento sin red*: sin interfaz, o si `intentos_login_estado` ya falló por red, se entra
+     directo con la huella guardada (antes 8 s + 8 s).
+  6. *Pantallas con datos viejos al volver la red*: `SyncService.alHaberDatosNuevos` (volvió la red
+     tras un corte, o se subió algo) + `RecargarAlReconectar` (`lib/shared/`) debajo del provider de
+     cada pantalla sin tiempo real (Almacenes, Recepciones, Entregas, Solicitudes, Calidad, Llenadora,
+     Codificación, Registro de salidas, Mermas, Soda Cáustica, Informe de Producción) y en
+     Producción del día. Una pantalla nueva sin `escucharTablas` lleva este widget.
 - **Entrar sin internet** (`lib/services/sesion_offline.dart`): cada ingreso CON internet guarda
   en Hive (`box_sesion`, clave `offline_<correo>`) una huella PBKDF2-SHA256 (20 000 iteraciones, sal
   propia; nunca la contraseña) + la fila de `usuarios` + los permisos. Si `signInWithPassword`
@@ -616,6 +753,11 @@ que repite el tour a pedido). Qué tour ya se vio se guarda en Hive (`HiveBoxes.
 nueva) **por dispositivo, no por usuario** — a propósito, porque en la fábrica suele ser la misma
 computadora para varios turnos/roles. `TourAyuda.mostrar` descarta solo los pasos cuyo `GlobalKey`
 no está montado en ese momento (ej. una tarjeta que ese rol no ve), en vez de romper.
+
+**Textos de los recorridos: una línea, lo mínimo** (pedido del usuario, 2026-10-25; se acortaron
+los 51). Un paso nuevo va igual de corto. Si una pantalla la usan roles que hacen cosas distintas,
+los pasos dependen del rol: en Producción del día, quien no puede editar no ve "Armar plan" ni
+"Marcar como completado" sino "Plan de hoy" (`_pasoListaVer`), y solo ve la lista, sin botones.
 
 Cada `PasoAyuda` también sirve de `Tooltip` permanente: `PasoAyuda.envolver(child)` devuelve el
 mismo `KeyedSubtree` de antes pero adentro de un `Tooltip` con el título y el texto del paso —

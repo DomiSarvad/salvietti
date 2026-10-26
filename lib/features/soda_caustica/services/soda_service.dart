@@ -4,6 +4,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/soda_modelos.dart';
 import '../repositories/soda_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas de Soda Cáustica: quién puede registrar una entrega y validación
 /// de cantidades. El stock lo maneja el almacén propio (Módulo 1); esto
@@ -92,4 +94,28 @@ class SodaService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<EntregaSoda> get entregasFiltradas => filtro.aplicar(entregas,
+      texto: (x) => <String?>[x.codigo, x.detalle, x.entregadoA, x.areaRecibe, x.motivo, x.responsableNombre].whereType<String>().join(' '),
+      fecha: (x) => x.fechaHora);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Entregas de Soda Cáustica',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Código', 'Ítem', 'Cantidad', 'Unidad', 'Entregado a', 'Área', 'Motivo', 'Responsable'],
+        filas: [
+          for (final x in entregasFiltradas) [x.fechaHora, x.codigo, x.detalle, x.cantidad, x.unidad, x.entregadoA, x.areaRecibe, x.motivo, x.responsableNombre]
+        ],
+      );
 }

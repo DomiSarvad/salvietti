@@ -4,6 +4,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/llenadora_modelos.dart';
 import '../repositories/llenadora_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas del módulo de Llenadora: quién puede iniciar/finalizar corridas,
 /// validación de la matriz sabor × presentación y del cierre (merma
@@ -144,4 +146,28 @@ class LlenadoraService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<CorridaLlenadora> get historialFiltrado => filtro.aplicar(historial,
+      texto: (x) => <String?>[x.sabor, x.presentacion, x.nLotePreparado, x.tanque, x.itemTapaDetalle, x.turno.etiqueta, x.responsableNombre, x.motivoMerma, x.observaciones].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Corridas de Llenadora',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Turno', 'Sabor', 'Presentación', 'Estado', 'Llenadas', 'Desechadas', 'Tapas usadas', 'Responsable'],
+        filas: [
+          for (final x in historialFiltrado) [x.fecha, x.turno.etiqueta, x.sabor, x.presentacion, x.estado.etiqueta, x.botellasLlenadas, x.botellasDesechadas, x.tapasUsadas, x.responsableNombre]
+        ],
+      );
 }

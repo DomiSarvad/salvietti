@@ -6,13 +6,14 @@ import '../../../services/archivo_service.dart';
 import '../../../utils/formatters.dart';
 import '../models/solicitud.dart';
 
-/// Constancia en PDF de una solicitud a Gerencia, para imprimir y firmar
-/// (mismo lenguaje visual que los reportes de inventario: logo, verde de
-/// marca, encabezado con fecha de emisión).
+/// Constancia en PDF de una solicitud a Gerencia YA RESUELTA (aprobada o
+/// rechazada, con el motivo), para imprimir y firmar si se quiere — es
+/// opcional (mismo lenguaje visual que los reportes de inventario: logo,
+/// verde de marca, encabezado con fecha de emisión).
 class SolicitudPdfService {
   static Future<Uint8List> pdf(Solicitud s) async {
     final doc = pw.Document();
-    final verde = PdfColor.fromInt(0xFF1B5E3A);
+    const verde = PdfColor.fromInt(0xFF1B5E3A);
     final logo =
         pw.MemoryImage((await rootBundle.load('assets/logo.png')).buffer.asUint8List());
 
@@ -65,13 +66,30 @@ class SolicitudPdfService {
             fila('Ítem', '${s.itemDetalle}'
                 '${s.cantidadSugerida == null ? '' : ' (${fmtNum(s.cantidadSugerida)} ${s.itemUnidad ?? ''})'}'),
           if (s.detalle != null) fila('Detalle', s.detalle!),
-          pw.SizedBox(height: 4),
-          fila('Estado', s.estado.etiqueta.toUpperCase()),
-          if (s.resueltaEn != null) ...[
-            fila('Resuelta por', s.resueltaPorNombre ?? '—'),
-            fila('Fecha de resolución', fmtFechaHora(s.resueltaEn)),
-            if (s.respuesta != null) fila('Respuesta', s.respuesta!),
-          ],
+          pw.SizedBox(height: 10),
+          // Lo que resolvió Gerencia, bien visible: la constancia sirve tanto
+          // para una aprobación como para dejar registrado un rechazo.
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: _colorEstado(s.estado), width: 1.4),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(s.estado.etiqueta.toUpperCase(),
+                  style: pw.TextStyle(
+                      fontSize: 14, fontWeight: pw.FontWeight.bold, color: _colorEstado(s.estado))),
+              if (s.resueltaEn != null) ...[
+                pw.SizedBox(height: 4),
+                fila('Resuelta por', s.resueltaPorNombre ?? '—'),
+                fila('Fecha de resolución', fmtFechaHora(s.resueltaEn)),
+                if (s.respuesta != null)
+                  fila(s.estado == EstadoSolicitud.rechazada ? 'Motivo del rechazo' : 'Respuesta',
+                      s.respuesta!),
+              ],
+            ]),
+          ),
           pw.SizedBox(height: 60),
           pw.Row(children: [
             pw.Expanded(
@@ -96,6 +114,12 @@ class SolicitudPdfService {
 
     return doc.save();
   }
+
+  static PdfColor _colorEstado(EstadoSolicitud e) => switch (e) {
+        EstadoSolicitud.aprobada => const PdfColor.fromInt(0xFF16A34A),
+        EstadoSolicitud.rechazada => const PdfColor.fromInt(0xFFDC2626),
+        EstadoSolicitud.pendiente => const PdfColor.fromInt(0xFFD97706),
+      };
 
   static Future<String> guardar(Uint8List bytes, Solicitud s) => ArchivoService.guardar(
         bytes,

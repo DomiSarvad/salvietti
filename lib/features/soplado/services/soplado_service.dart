@@ -5,6 +5,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/soplado_modelos.dart';
 import '../repositories/soplado_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas del módulo de Soplado: quién puede iniciar/finalizar corridas,
 /// validación de la matriz sabor × presentación (solo PET) y del cierre
@@ -182,4 +184,28 @@ class SopladoService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<CorridaSoplado> get historialFiltrado => filtro.aplicar(historial,
+      texto: (x) => <String?>[x.sabor, x.presentacion, x.lotePreforma, x.proveedorNombre, x.itemPreformaDetalle, x.responsableNombre, x.motivoMerma, x.observaciones].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Corridas de Soplado',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Sabor', 'Presentación', 'Estado', 'Sopladas', 'Merma soplado', 'Merma preforma', 'Merma etiquetado', 'Parada (min)', 'Responsable'],
+        filas: [
+          for (final x in historialFiltrado) [x.fecha, x.sabor, x.presentacion, x.estado.etiqueta, x.botellasSopladas, x.mermaSoplado, x.mermaPreforma, x.mermaEtiquetado, x.tiempoParadaMinutos, x.responsableNombre]
+        ],
+      );
 }

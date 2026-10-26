@@ -122,6 +122,9 @@ class CorridaSoplado {
   });
 
   Duration? get duracion => horaFin?.difference(horaInicio);
+
+  /// Iniciado sin internet y todavía en la cola (id provisorio negativo).
+  bool get sinSubir => id < 0;
   bool get tieneMerma => mermaSoplado > 0 || mermaPreforma > 0 || mermaEtiquetado > 0;
 
   /// Botellas buenas que quedaron después de soplar y etiquetar.

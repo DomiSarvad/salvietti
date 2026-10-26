@@ -9,6 +9,9 @@ import '../models/categoria_inv.dart';
 import '../models/existencia_item.dart';
 import '../models/item_inventario.dart';
 import '../models/movimiento_inv.dart';
+import '../models/movimiento_periodo.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 import '../models/unidad_medida.dart';
 import '../repositories/inventario_repository.dart';
 
@@ -46,8 +49,17 @@ class InventarioService extends ChangeNotifier {
   String busqueda = '';
   bool soloPedido = false;
 
-  /// En la raíz solo se ven las categorías; con esto se lista todo el almacén.
-  bool verTodo = false;
+  /// Buscador común (texto + Desde/Hasta + PDF/Excel). El texto es [busqueda];
+  /// las fechas muestran los ítems que tuvieron movimiento en ese período, con
+  /// cuánto entró y salió ([movimientoDe]).
+  FiltroLista filtro = const FiltroLista();
+
+  /// Entradas/salidas por ítem en el período elegido (null = sin fechas, o
+  /// todavía cargando).
+  Map<int, MovimientoPeriodo>? _periodo;
+  bool cargandoPeriodo = false;
+  String? errorPeriodo;
+  int _pedidoPeriodo = 0;
 
   bool cargando = true;
   String? error;
@@ -64,10 +76,12 @@ class InventarioService extends ChangeNotifier {
   }
 
   Timer? _redibujarBusqueda;
+  bool _cerrado = false;
 
   @override
   void dispose() {
     _redibujarBusqueda?.cancel();
+    _cerrado = true;
     super.dispose();
   }
 
@@ -126,6 +140,10 @@ class InventarioService extends ChangeNotifier {
 
   /// La salida directa (sin pedido ni firma) es una acción de Almacén
   /// General sobre lo que tiene en su estante (sección 13 del md).
+  /// El filtro "Pedido" (ítems a reponer) es para quien compra o pide: el
+  /// Gerente solo mira (ver [Rol.soloInformes]).
+  bool get muestraFiltroPedido => !_usuario.soloInformes;
+
   bool get puedeSalidaDirecta => almacenId == 'general' && puedeEditar;
 
   // ------------------------------------------------------------------- carga
@@ -176,6 +194,7 @@ class InventarioService extends ChangeNotifier {
   }
 
   Future<void> _cargarAlmacen(String id) async {
+    final otroAlmacen = id != almacenId;
     final resultados =
         await Future.wait([_repo.categoriasTodas(), _repo.existencias(id)]);
     almacenId = id;
@@ -188,6 +207,7 @@ class InventarioService extends ChangeNotifier {
     cargando = false;
     error = null;
     notifyListeners();
+    if (otroAlmacen && periodoActivo) _cargarPeriodo();
   }
 
   /// Categorías propias del almacén actual: las únicas donde se pueden dar
@@ -246,16 +266,61 @@ class InventarioService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void alternarVerTodo() {
-    verTodo = !verTodo;
-    limiteTabla = filasPorTanda;
+  /// Lo que manda la barra de filtros: el texto se aplica como [buscar]; si
+  /// cambiaron las fechas, se traen las entradas/salidas de ese período.
+  void filtrar(FiltroLista f) {
+    final cambiaronFechas = f.desde != filtro.desde || f.hasta != filtro.hasta;
+    filtro = f;
+    if (f.texto != busqueda) buscar(f.texto);
+    if (cambiaronFechas) {
+      limiteTabla = filasPorTanda;
+      _cargarPeriodo();
+    }
+  }
+
+  bool get periodoActivo => filtro.desde != null || filtro.hasta != null;
+
+  Future<void> _cargarPeriodo() async {
+    final pedido = ++_pedidoPeriodo;
+    errorPeriodo = null;
+    if (!periodoActivo || almacenId == null) {
+      _periodo = null;
+      cargandoPeriodo = false;
+      _visiblesMemo = null;
+      notifyListeners();
+      return;
+    }
+    cargandoPeriodo = true;
+    notifyListeners();
+    // Sin Desde: desde el principio; sin Hasta: hasta hoy (incluido).
+    final d = filtro.desde ?? DateTime(2000);
+    final h0 = filtro.hasta ?? DateTime.now();
+    final hasta = DateTime(h0.year, h0.month, h0.day + 1);
+    final desde = DateTime(d.year, d.month, d.day);
+    try {
+      final r = await _repo.movimientosPeriodo(almacenId!, desde, hasta);
+      if (pedido != _pedidoPeriodo || _cerrado) return;
+      _periodo = r;
+    } catch (e) {
+      if (pedido != _pedidoPeriodo || _cerrado) return;
+      if (kDebugMode) debugPrint('InventarioService: $e');
+      _periodo = const {};
+      errorPeriodo = 'No se pudieron traer los movimientos de esas fechas. Revisá la conexión.';
+    }
+    cargandoPeriodo = false;
+    _visiblesMemo = null;
     notifyListeners();
   }
 
+  /// Entradas/salidas del ítem en el período elegido (null sin fechas).
+  MovimientoPeriodo? movimientoDe(ExistenciaItem e) =>
+      periodoActivo ? (_periodo?[e.itemId] ?? const MovimientoPeriodo()) : null;
+
   /// La lista de ítems aparece al entrar a una categoría, al buscar o al
-  /// filtrar; en la raíz sin nada de eso se muestran solo las categorías.
+  /// filtrar (texto, fechas o "Pedido"); en la raíz sin nada de eso se ven
+  /// solo las categorías (el reporte, igual, sale con todo el almacén).
   bool get mostrarTabla =>
-      categoriaFiltro != null || busqueda.trim().isNotEmpty || soloPedido || verTodo;
+      categoriaFiltro != null || busqueda.trim().isNotEmpty || soloPedido || periodoActivo;
 
   List<CategoriaInv> hijosDe(int? padreId) {
     _asegurarIndices();
@@ -345,7 +410,7 @@ class InventarioService extends ChangeNotifier {
   /// se calcula una sola vez por combinación de filtros.
   List<ExistenciaItem> get visibles {
     _asegurarIndices();
-    final clave = (busqueda.trim(), categoriaFiltro, soloPedido);
+    final clave = (busqueda.trim(), categoriaFiltro, soloPedido, periodoActivo, identityHashCode(_periodo));
     final memo = _visiblesMemo;
     if (memo != null && _visiblesClave == clave) return memo;
 
@@ -356,6 +421,8 @@ class InventarioService extends ChangeNotifier {
     final resultado = List<ExistenciaItem>.unmodifiable(existencias.where((e) {
       if (ids != null && !ids.contains(e.categoriaId)) return false;
       if (soloPedido && !necesitaPedido(e)) return false;
+      // Con fechas: solo lo que se movió en ese período.
+      if (periodoActivo && _periodo != null && !_periodo!.containsKey(e.itemId)) return false;
       if (palabras.isEmpty) return true;
       final texto = _textoDe(e);
       return palabras.every(texto.contains);
@@ -377,6 +444,46 @@ class InventarioService extends ChangeNotifier {
       case EstadoStock.optimo:
         return SituacionStock.optimo;
     }
+  }
+
+  static String textoSituacion(SituacionStock s) {
+    switch (s) {
+      case SituacionStock.critico:
+        return 'Crítico';
+      case SituacionStock.bajo:
+        return 'Bajo';
+      case SituacionStock.optimo:
+        return 'Óptimo';
+      case SituacionStock.sinDatos:
+        return 'Sin consumo';
+    }
+  }
+
+  /// Reporte PDF/Excel con EXACTAMENTE lo que se ve (almacén, categoría,
+  /// búsqueda, fechas y "Pedido"). En la raíz sin filtros: todo el almacén.
+  ReporteTabla reporte() {
+    final almacen = almacenes.where((a) => a.id == almacenId).firstOrNull?.nombre ?? '';
+    final conPeriodo = periodoActivo;
+    return ReporteTabla(
+      titulo: 'Inventario · $almacen',
+      filtros: [
+        if (categoriaFiltro != null) 'Categoría: ${textoRuta(categoriaFiltro!)}',
+        filtro.describir(),
+        if (soloPedido) 'Solo ítems a pedir',
+      ].join('   ·   '),
+      columnas: [
+        'Código', 'Detalle', 'Ubicación', 'Stock', 'Unidad', 'Mínimo', 'Días', 'Estado',
+        if (conPeriodo) ...['Entradas', 'Salidas'],
+      ],
+      filas: [
+        for (final e in visibles)
+          [
+            e.codigo, e.detalle, textoRutaRelativa(e.categoriaId), e.cantidadSistema, e.unidad,
+            e.stockMinimo, e.diasExistencia, textoSituacion(situacion(e)),
+            if (conPeriodo) ...[movimientoDe(e)!.entradas, movimientoDe(e)!.salidas],
+          ]
+      ],
+    );
   }
 
   /// Marca "Pedido" cuando el stock llegó al mínimo definido para el ítem.

@@ -10,6 +10,8 @@ import '../repositories/soplado_repository.dart';
 import '../services/soplado_service.dart';
 import '../widgets/finalizar_corrida_dialog.dart';
 import '../widgets/iniciar_corrida_dialog.dart';
+import '../../../shared/chip_sin_subir.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Producción de Soplado: corridas en curso, historial y el avance de los
 /// últimos 14 días (lo ven también Jarabes y Producción). Solo UI; las
@@ -38,19 +40,17 @@ class _VistaState extends State<_Vista> {
   final _pasoIniciar = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Iniciar corrida',
-    texto: 'Elegís sabor, presentación y lote de preforma para empezar a soplar '
-        'botellas.',
+    texto: 'Sabor, presentación y lote de preforma.',
   );
   final _pasoAvance = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Avance de los últimos 14 días',
-    texto: 'Cuánto se sopló de cada sabor/presentación en las últimas dos semanas, para '
-        'no soplar de más.',
+    texto: 'Lo soplado en las últimas dos semanas.',
   );
   final _pasoHistorial = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Historial',
-    texto: 'Las corridas ya finalizadas o anuladas, con su merma y motivo.',
+    texto: 'Corridas cerradas, con su merma.',
   );
 
   @override
@@ -100,13 +100,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.historial;
+    final lista = svc.historialFiltrado;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(context, svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(context, svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por sabor, presentación, lote, responsable…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay corridas finalizadas.',
@@ -284,6 +297,7 @@ class _TarjetaCorrida extends StatelessWidget {
                   child: Text('${c.sabor ?? ''} · ${c.presentacion ?? ''}',
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
+                if (c.sinSubir) const ChipSinSubir(),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(

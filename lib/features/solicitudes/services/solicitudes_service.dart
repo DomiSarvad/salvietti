@@ -4,6 +4,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/solicitud.dart';
 import '../repositories/solicitudes_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 enum BandejaSolicitudes {
   mias('Mis solicitudes'),
@@ -34,6 +36,23 @@ class SolicitudesService extends ChangeNotifier {
   bool get puedeCrear => _puede(Modulo.solicitudes, Accion.crear);
   bool get puedeAprobar => _puede(Modulo.aprobaciones, Accion.aprobar);
 
+  /// Las pestañas que tienen sentido para este rol: quien pide ve las suyas;
+  /// quien aprueba (el Gerente) ve lo que espera respuesta y lo resuelto. Al
+  /// Gerente antes le aparecía "Mis solicitudes" aunque él no pide nada.
+  List<BandejaSolicitudes> get bandejas => [
+        if (puedeCrear || !puedeAprobar) BandejaSolicitudes.mias,
+        if (puedeAprobar) ...[BandejaSolicitudes.porAprobar, BandejaSolicitudes.resueltas],
+      ];
+
+  /// La constancia es el comprobante de lo que resolvió Gerencia (aprobada o
+  /// rechazada, con su motivo): mientras está pendiente no hay nada que
+  /// constar. Imprimirla es opcional.
+  bool puedeImprimir(Solicitud s) => s.estado != EstadoSolicitud.pendiente;
+
+  /// El mensaje es "mío" (va a la derecha en la conversación) si lo escribió
+  /// quien está mirando: el pedido si lo hizo él; la respuesta si es quien aprueba.
+  bool esMia(Solicitud s) => s.solicitanteId == _usuario.id;
+
   Future<void> iniciar() async {
     cargando = true;
     error = null;
@@ -61,8 +80,18 @@ class SolicitudesService extends ChangeNotifier {
   }
 
   void elegirBandeja(BandejaSolicitudes b) {
+    if (!bandejas.contains(b)) return;
     bandeja = b;
     notifyListeners();
+  }
+
+  /// Una solicitud recién cargada de nuevo (después de resolverla, para que
+  /// la conversación abierta muestre la respuesta).
+  Solicitud? porId(int id) {
+    for (final s in solicitudes) {
+      if (s.id == id) return s;
+    }
+    return null;
   }
 
   List<Solicitud> get visibles {
@@ -135,4 +164,28 @@ class SolicitudesService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<Solicitud> get visiblesFiltrados => filtro.aplicar(visibles,
+      texto: (x) => <String?>[TipoSolicitud.etiqueta(x.tipo), x.asunto, x.detalle, x.itemDetalle, x.solicitanteNombre, x.respuesta, x.estado.etiqueta].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Solicitudes a Gerencia',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Tipo', 'Asunto', 'Ítem', 'Cantidad', 'Solicitante', 'Estado', 'Respuesta'],
+        filas: [
+          for (final x in visiblesFiltrados) [x.fecha, TipoSolicitud.etiqueta(x.tipo), x.asunto, x.itemDetalle, x.cantidadSugerida, x.solicitanteNombre, x.estado.etiqueta, x.respuesta]
+        ],
+      );
 }

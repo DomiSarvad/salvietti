@@ -1,5 +1,14 @@
 // Modelos del Informe general de Producción (Módulo 11).
 
+/// Un problema que tiene un motivo claro para mostrarle a la persona (no
+/// "revisá la conexión" cuando el problema es otro).
+class ErrorInforme implements Exception {
+  final String mensaje;
+  const ErrorInforme(this.mensaje);
+  @override
+  String toString() => mensaje;
+}
+
 /// Una fila del resumen: un sabor en un día, lo esperado (de Jarabes ×
 /// estándar del sabor) contra lo producido (de Registro de salidas).
 class ResumenProduccion {

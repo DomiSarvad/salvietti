@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
-import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
-import '../models/solicitud.dart';
 import '../repositories/solicitudes_repository.dart';
-import '../services/solicitud_pdf_service.dart';
 import '../services/solicitudes_service.dart';
-import '../widgets/resolver_solicitud_dialog.dart';
+import '../widgets/conversacion_solicitud.dart';
 import '../widgets/solicitud_form_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Solicitudes a Gerencia: cualquier área pide algo (suministro,
 /// autorización, cambio de receta...) y Gerencia lo aprueba o rechaza desde
@@ -24,7 +22,10 @@ class SolicitudesScreen extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) =>
           SolicitudesService(SupabaseSolicitudesRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<SolicitudesService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -40,8 +41,7 @@ class _VistaState extends State<_Vista> {
   final _pasoBandejas = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Bandejas',
-    texto: 'Cualquier área le pide algo a Gerencia acá (no a Almacén — para eso está '
-        'Entregas). Gerencia tiene una sola bandeja para aprobar o rechazar todo.',
+    texto: 'Pedidos a Gerencia, por estado.',
   );
 
   @override
@@ -85,7 +85,7 @@ class _VistaState extends State<_Vista> {
       );
     }
 
-    final items = svc.visibles;
+    final items = svc.visiblesFiltrados;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -124,9 +124,8 @@ class _VistaState extends State<_Vista> {
             Wrap(
               spacing: 8,
               children: [
-                for (final b in BandejaSolicitudes.values)
-                  if (b != BandejaSolicitudes.porAprobar || svc.puedeAprobar)
-                    ChoiceChip(
+                for (final b in svc.bandejas)
+                  ChoiceChip(
                       label: Text(b == BandejaSolicitudes.porAprobar && svc.pendientesDeAprobar > 0
                           ? '${b.etiqueta} (${svc.pendientesDeAprobar})'
                           : b.etiqueta),
@@ -140,126 +139,44 @@ class _VistaState extends State<_Vista> {
             ),
           ),
         ),
+        // Buscador: texto, Desde/Hasta, y PDF/Excel de lo filtrado (dentro de la
+        // bandeja elegida).
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: BarraFiltros(
+            filtro: svc.filtro,
+            onCambio: svc.filtrar,
+            reporte: svc.reporte,
+            hint: 'Buscar por asunto, ítem, solicitante, tipo…',
+          ),
+        ),
         Expanded(
           child: items.isEmpty
-              ? const Center(
-                  child: Text('No hay solicitudes para mostrar.',
-                      style: TextStyle(color: Colors.black54)))
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: items.length,
-                  itemBuilder: (_, i) => _Tarjeta(svc: svc, s: items[i]),
+              ? (svc.filtro.activo
+                  ? const SinResultados()
+                  : const Center(
+                      child: Text('No hay solicitudes para mostrar.',
+                          style: TextStyle(color: Colors.black54))))
+              // Como una bandeja de mensajes: una fila por conversación;
+              // tocarla abre el chat con el pedido y la respuesta.
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: ListView.separated(
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 72, color: Color(0xFFE8ECEF)),
+                      itemBuilder: (context, i) => FilaConversacion(
+                        s: items[i],
+                        mia: svc.esMia(items[i]),
+                        onTap: () => ConversacionSolicitud.abrir(context, svc, items[i]),
+                      ),
+                    ),
+                  ),
                 ),
         ),
       ],
-    );
-  }
-}
-
-class _Tarjeta extends StatelessWidget {
-  final SolicitudesService svc;
-  final Solicitud s;
-  const _Tarjeta({required this.svc, required this.s});
-
-  Color _colorEstado() {
-    switch (s.estado) {
-      case EstadoSolicitud.pendiente:
-        return const Color(0xFFD97706);
-      case EstadoSolicitud.aprobada:
-        return const Color(0xFF16A34A);
-      case EstadoSolicitud.rechazada:
-        return const Color(0xFFDC2626);
-    }
-  }
-
-  Future<void> _resolver(BuildContext context) => showDialog<bool>(
-        context: context,
-        builder: (_) => ResolverSolicitudDialog(servicio: svc, solicitud: s),
-      );
-
-  Future<void> _imprimir(BuildContext context) async {
-    try {
-      final bytes = await SolicitudPdfService.pdf(s);
-      final mensaje = await SolicitudPdfService.guardar(bytes, s);
-      if (context.mounted) mostrarExito(context, mensaje);
-    } catch (_) {
-      if (context.mounted) mostrarError(context, 'No se pudo generar el PDF.');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final puedeResolver = svc.puedeAprobar && s.estado == EstadoSolicitud.pendiente;
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(s.asunto,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: _colorEstado().withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Text(s.estado.etiqueta,
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600, color: _colorEstado())),
-                ),
-              ],
-            ),
-            Text(
-              '${TipoSolicitud.etiqueta(s.tipo)} · ${s.solicitanteNombre ?? '—'} · ${fmtFechaHora(s.fecha)}',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            if (s.itemDetalle != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Ítem: ${s.itemDetalle}'
-                  '${s.cantidadSugerida == null ? '' : ' · ${fmtNum(s.cantidadSugerida)} ${s.itemUnidad ?? ''}'}',
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-            if (s.detalle != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(s.detalle!),
-              ),
-            if (s.respuesta != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('Respuesta de ${s.resueltaPorNombre ?? 'Gerencia'}: ${s.respuesta}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
-              ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => _imprimir(context),
-                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                  label: const Text('Constancia PDF'),
-                ),
-                if (puedeResolver)
-                  FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                    onPressed: () => _resolver(context),
-                    child: const Text('Resolver'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -12,8 +12,10 @@
 -- pedidos/entregas, v21): así el pedido y sus líneas quedan en una sola
 -- transacción y nadie puede cambiar el estado a mano.
 --
--- También agrega `compras_pedidos` y `solicitudes_gerencia` a la publicación
--- de Realtime: la campana flotante se actualiza sola cuando llega algo.
+-- También agrega a la publicación de Realtime `compras_pedidos` y
+-- `solicitudes_gerencia` (la campana flotante se actualiza sola) y las tablas de
+-- los Informes que faltaban (`calidad_analisis`, `salidas_reportes`,
+-- `salidas_reporte_lineas`, `soda_entregas`), para que se actualicen en vivo.
 --
 -- Re-ejecutable. Requiere v17 (permisos), v18 (inv_items), v24 (solicitudes).
 -- =====================================================================
@@ -187,7 +189,10 @@ do $$
 declare
     t text;
 begin
-    foreach t in array array['compras_pedidos', 'solicitudes_gerencia'] loop
+    foreach t in array array[
+        'compras_pedidos', 'solicitudes_gerencia',
+        'calidad_analisis', 'salidas_reportes', 'salidas_reporte_lineas', 'soda_entregas'
+    ] loop
         if not exists (
             select 1 from pg_publication_tables
              where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t

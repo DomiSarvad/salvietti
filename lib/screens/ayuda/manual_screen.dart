@@ -39,6 +39,10 @@ const _entradas = <_EntradaManual>[
     resumen: 'El plan que arma el Jefe de Producción cada día.',
     puntos: [
       'El Jefe de Producción toca "Armar plan" para cargar qué se va a producir hoy.',
+      'Al tocar "Guardar y compartir", el plan queda en el sistema (Jarabes y las demás áreas '
+          'trabajan con él) y se abre la foto de la planilla para mandarla por WhatsApp. La foto no '
+          'se guarda en la compu; si la querés como archivo, usá "Descargar". Los planes de cada '
+          'día se ven después en Informes → Plan de producción.',
       'Cada producto se marca "hecho" cuando termina de embotellarse (eso descuenta stock '
           'automáticamente: materia prima, preformas y tapas).',
       'Tocar un producto de la lista (o su ícono de gota) te lleva a Jarabes con ese sabor '
@@ -103,8 +107,23 @@ const _entradas = <_EntradaManual>[
     resumen: 'Cualquier área le pide algo a Gerencia (no a Almacén).',
     puntos: [
       'Para faltantes de suministro, autorizaciones o cambios de receta.',
-      'Gerencia tiene una sola bandeja para aprobar o rechazar todo.',
+      'Se ve como un chat: tocá una solicitud para ver el pedido y la respuesta de Gerencia.',
+      'Gerencia responde ahí mismo con Aprobar o Rechazar (el rechazo lleva el motivo).',
+      'Ya resuelta, se puede imprimir la constancia (opcional), aprobada o rechazada.',
       'También se puede mandar desde la campana (abajo a la derecha): "Nueva solicitud o pregunta".',
+    ],
+  ),
+  _EntradaManual(
+    titulo: 'Buscar y sacar reportes',
+    icono: Icons.manage_search,
+    resumen: 'Todas las listas tienen el mismo buscador, con fechas y PDF/Excel.',
+    puntos: [
+      'Escribí en "Buscar" (sabor, lote, ítem, responsable…): busca todas las palabras, '
+          'en cualquier orden, sin importar tildes ni mayúsculas.',
+      'Elegí "Desde" y "Hasta" para ver solo un período (los dos días entran). La "x" '
+          'quita la fecha.',
+      'Los botones rojo (PDF) y verde (Excel) descargan EXACTAMENTE lo que estás viendo '
+          'con esos filtros: el buscador es el filtro del reporte.',
     ],
   ),
   _EntradaManual(
@@ -134,14 +153,21 @@ const _entradas = <_EntradaManual>[
   _EntradaManual(
     titulo: 'Informes (Gerente)',
     icono: Icons.insights_outlined,
-    resumen: 'Resultados de cada área por semana o por mes, con gráficos.',
+    resumen: 'Resultados de cada área por semana, mes, año o las fechas que elijas, con gráficos.',
     puntos: [
       '"General" resume todo; cada área (Jarabes, Soplado, Llenadora, Calidad, Mermas, '
           'Almacén…) muestra sus resultados en detalle.',
-      'Semanal: una barra por día. Mensual: una barra por semana. Con las flechas se ven '
-          'períodos anteriores.',
+      'En "Ver por" elegís Semana (una barra por día), Mes (una por semana) o Año (una por mes). '
+          'Con las flechas se ven períodos anteriores. En Desde/Hasta podés elegir cualquier '
+          'rango; la x vuelve a la semana/mes/año.',
+      'El buscador deja ver solo algo específico (un sabor, un producto, un área): los números, '
+          'el gráfico y lo que se imprime son solo de eso.',
+      'Si el período todavía no terminó, la parte clara de cada barra es lo que se estima que '
+          'falta al ritmo que se lleva, y abajo aparece la proyección al cierre (ej. cómo va a '
+          'terminar el año).',
       'Solo cuenta lo terminado (las corridas en curso o anuladas no entran).',
-      'Los botones PDF y Excel descargan exactamente el informe que estás viendo.',
+      'Los botones PDF y Excel descargan exactamente el informe que estás viendo (con la '
+          'búsqueda y el período elegidos).',
     ],
   ),
   _EntradaManual(

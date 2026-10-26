@@ -4,6 +4,8 @@ import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/codificacion_modelos.dart';
 import '../repositories/codificacion_repository.dart';
+import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/reporte_tabla.dart';
 
 /// Reglas del módulo de Codificación: quién puede iniciar/finalizar
 /// corridas, validación de la matriz sabor × presentación y del cierre
@@ -144,4 +146,28 @@ class CodificacionService extends ChangeNotifier {
       return 'No se pudo completar la operación.';
     }
   }
+
+  // ------------------------------------------------- buscador y reporte
+
+  /// Filtro del buscador (texto + Desde/Hasta): define qué se ve en la lista y
+  /// qué sale en el reporte PDF/Excel ("lo que ves es lo que se imprime").
+  FiltroLista filtro = const FiltroLista();
+
+  void filtrar(FiltroLista f) {
+    filtro = f;
+    notifyListeners();
+  }
+
+  List<CorridaCodificacion> get historialFiltrado => filtro.aplicar(historial,
+      texto: (x) => <String?>[x.sabor, x.presentacion, x.nLote, x.codigoImpreso, x.turno.etiqueta, x.responsableNombre, x.motivoMerma, x.observaciones].whereType<String>().join(' '),
+      fecha: (x) => x.fecha);
+
+  ReporteTabla reporte() => ReporteTabla(
+        titulo: 'Corridas de Codificación',
+        filtros: filtro.describir(),
+        columnas: const ['Fecha', 'Turno', 'Sabor', 'Presentación', 'Estado', 'Codificadas', 'Mal tapadas', 'Impurezas', 'Responsable'],
+        filas: [
+          for (final x in historialFiltrado) [x.fecha, x.turno.etiqueta, x.sabor, x.presentacion, x.estado.etiqueta, x.botellasCodificadas, x.botellasMalTapadas, x.impurezas, x.responsableNombre]
+        ],
+      );
 }

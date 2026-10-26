@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'cola_offline.dart';
+import 'http_base.dart';
 
 /// Resultado de subir la cola de escrituras hechas sin internet.
 class ResultadoSubida {
@@ -32,8 +33,18 @@ class ResultadoSubida {
 /// `movimientos` (`HiveService`) y la foto de perfil tampoco pasan por acá:
 /// ya tenían su propio mecanismo offline.
 class ClienteOffline extends http.BaseClient {
-  ClienteOffline([http.Client? interno]) : _interno = interno ?? http.Client();
+  ClienteOffline([http.Client? interno]) : _interno = interno ?? crearClienteHttp();
   final http.Client _interno;
+
+  /// Una escritura que falla por red DESPUÉS de esto no se encola: las
+  /// pantallas esperan 8 s (`SupabaseService.timeoutRed`) y, pasado ese
+  /// tiempo, ya le mostraron a la persona "no se pudo". Si se encolara igual,
+  /// se subiría sola más tarde, y si la persona lo volvió a intentar (lo
+  /// normal después de ver un error) quedaría registrado dos veces. Con
+  /// esto, lo que ve la persona y lo que pasa coinciden: o "se guardó en esta
+  /// compu" (y se sube), o un error (y no se hizo nada).
+  @visibleForTesting
+  static Duration limiteParaEncolar = const Duration(seconds: 7);
 
   /// Si el último pedido llegó al servidor. Lo actualiza cada respuesta (o
   /// falla de red); más confiable que connectivity_plus, que dice "wifi"
@@ -310,6 +321,7 @@ class ClienteOffline extends http.BaseClient {
             ColaOffline.patronIdTemporal.hasMatch(utf8.decode(cuerpo, allowMalformed: true)));
 
     if (!alaCola) {
+      final reloj = Stopwatch()..start();
       try {
         final r = await _interno.send(_copiar(request, cuerpo));
         _marcarRed(true);
@@ -320,6 +332,7 @@ class ClienteOffline extends http.BaseClient {
           rethrow;
         }
         _marcarRed(false);
+        if (reloj.elapsed >= limiteParaEncolar) rethrow; // la pantalla ya dio error
       }
     }
     return _encolar(request, cuerpo, usuario);
@@ -401,7 +414,7 @@ class ClienteOffline extends http.BaseClient {
     required Future<void> Function() refrescarToken,
     @visibleForTesting http.Client? clienteHttp,
   }) async {
-    final cliente = clienteHttp ?? http.Client();
+    final cliente = clienteHttp ?? crearClienteHttp();
     var subidas = 0, rechazadas = 0;
     try {
       for (final op in ColaOffline.pendientes().where((o) => o.usuario == usuario)) {
@@ -569,6 +582,9 @@ class ClienteOffline extends http.BaseClient {
     'salidas_guardar_linea': 'Registro de salidas: guardar línea',
     'salidas_eliminar_linea': 'Registro de salidas: borrar línea',
     'salidas_cerrar_reporte': 'Registro de salidas: cerrar reporte',
+    'compras_crear_pedido': 'Pedidos de compra: nuevo pedido',
+    'compras_resolver': 'Pedidos de compra: resolver',
+    'compras_anular': 'Pedidos de compra: anular',
     'solicitud_crear': 'Solicitud a Gerencia',
     'solicitud_resolver': 'Solicitudes: resolver',
     'eliminar_logico': 'Eliminar registro',

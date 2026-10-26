@@ -45,6 +45,20 @@ class SyncService extends ChangeNotifier {
   /// Cada sincronización que subió o rechazó algo.
   Stream<ResultadoSync> get resultados => _resultados.stream;
 
+  final _datosNuevos = StreamController<void>.broadcast();
+
+  /// Avisa cuando conviene recargar lo que se ve en pantalla: volvió la
+  /// conexión después de un corte (se estaba mostrando la copia guardada) o
+  /// se subió algo de la cola. Lo escucha `RecargarAlReconectar`.
+  Stream<void> get alHaberDatosNuevos => _datosNuevos.stream;
+  bool _huboCorte = false;
+
+  void _avisarSiVolvio({int subidas = 0}) {
+    if (!online || (!_huboCorte && subidas == 0)) return;
+    _huboCorte = false;
+    _datosNuevos.add(null);
+  }
+
   /// Se llama desde el `ChangeNotifierProxyProvider` en main.dart para que
   /// esta clase pueda pedirle a AuthService que suba la foto de perfil
   /// pendiente al sincronizar (sin que SyncService dependa de construir
@@ -67,13 +81,19 @@ class SyncService extends ChangeNotifier {
     final antesOffline = !online;
     _hayInterfaz = !results.contains(ConnectivityResult.none);
     ClienteOffline.sinInterfaz = !_hayInterfaz;
+    if (!online) _huboCorte = true;
     notifyListeners();
     if (online && antesOffline) sincronizarTodo(); // auto-sync al recuperar conexión
   }
 
   void _alCambiarRed() {
+    if (!online) _huboCorte = true;
     notifyListeners();
-    if (online && _haySubibles && !_sincronizando) sincronizarTodo();
+    if (online && _haySubibles && !_sincronizando) {
+      sincronizarTodo(); // avisa al terminar
+    } else if (!_sincronizando) {
+      _avisarSiVolvio();
+    }
   }
 
   @override
@@ -83,6 +103,7 @@ class SyncService extends ChangeNotifier {
     ClienteOffline.hayRed.removeListener(_alCambiarRed);
     ColaOffline.cambios.removeListener(notifyListeners);
     _resultados.close();
+    _datosNuevos.close();
     super.dispose();
   }
 
@@ -153,6 +174,7 @@ class SyncService extends ChangeNotifier {
       _sincronizando = false;
       notifyListeners();
     }
+    _avisarSiVolvio(subidas: exitosos);
     final quedan = pendientes;
     return 'Sincronizados: $exitosos.'
         '${rechazados > 0 ? ' Rechazados por el servidor: $rechazados (ver la lista).' : ''}'

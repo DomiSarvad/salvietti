@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
@@ -8,6 +9,7 @@ import '../models/mermas_modelos.dart';
 import '../repositories/mermas_repository.dart';
 import '../services/mermas_service.dart';
 import '../widgets/registrar_merma_dialog.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Mermas: consolida en un solo lugar la de Soplado, Llenadora y
 /// Codificación (que ya se registra dentro de sus corridas) con la que se
@@ -21,7 +23,10 @@ class MermasScreen extends StatelessWidget {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => MermasService(SupabaseMermasRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: RecargarAlReconectar(
+        alReconectar: (c) => c.read<MermasService>().recargar(),
+        child: const _Vista(),
+      ),
     );
   }
 }
@@ -37,18 +42,17 @@ class _VistaState extends State<_Vista> {
   final _pasoInfo = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'De dónde sale cada merma',
-    texto: 'Soplado, Llenadora y Codificación ya quedan acá solas (se registran en su '
-        'propia corrida). Jarabes, Calidad y Vidrio se cargan a mano con el botón de arriba.',
+    texto: 'Soplado, Llenadora y Codificación se cargan solas.',
   );
   final _pasoRegistrar = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Registrar merma',
-    texto: 'Para las áreas sin corrida propia: Jarabes, Calidad y Vidrio.',
+    texto: 'Para Jarabes, Calidad y Vidrio.',
   );
   final _pasoAlerta = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Alertas',
-    texto: 'Se avisa acá cuando algún evento supera el 3 % de lo producido.',
+    texto: 'Lo que supera el 3 % de lo producido.',
   );
 
   @override
@@ -100,13 +104,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.consolidado;
+    final lista = svc.consolidadoFiltrado;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezado(context, svc, puedeCrear);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezado(context, svc, puedeCrear),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por área, sabor, presentación, motivo…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(

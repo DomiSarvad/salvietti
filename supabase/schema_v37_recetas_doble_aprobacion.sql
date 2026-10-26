@@ -37,7 +37,7 @@ drop function if exists public.jarabes_receta_aprobar(bigint);
 -- ---------------------------------------------------------------------
 create or replace function public._verificar_clave_actual(p_clave text) returns boolean
 language plpgsql security definer
-set search_path = public, auth, pg_temp
+set search_path = public, auth, extensions, pg_temp -- pgcrypto vive en `extensions` (ver v44)
 as $$
 declare v_hash text;
 begin

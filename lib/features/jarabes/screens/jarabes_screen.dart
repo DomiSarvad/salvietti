@@ -16,6 +16,8 @@ import '../widgets/finalizar_preparado_dialog.dart';
 import '../widgets/iniciar_preparado_dialog.dart';
 import '../widgets/proponer_receta_dialog.dart';
 import '../widgets/resolver_receta_dialog.dart';
+import '../../../shared/chip_sin_subir.dart';
+import '../../../shared/filtros/barra_filtros.dart';
 
 /// Producción de Jarabes: preparados en curso e historial, avance de
 /// Soplado y, si corresponde, recetas propuestas por aprobar. Solo UI; las
@@ -54,19 +56,17 @@ class _VistaState extends State<_Vista> {
   final _pasoNuevoPreparado = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Nuevo preparado',
-    texto: 'Elegís el sabor y la cantidad; el sistema verifica solo si alcanza el '
-        'insumo. Si falta, ofrece mandar la solicitud a Almacén ahí mismo.',
+    texto: 'Sabor y cantidad; avisa si falta insumo.',
   );
   final _pasoPlanDelDia = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Plan de hoy',
-    texto: 'Lo que Producción planificó para hoy, de referencia — tocá un producto '
-        'para preparar ese sabor. No obliga: se puede elegir cualquier otro si hace falta.',
+    texto: 'Tocá un producto para prepararlo.',
   );
   final _pasoHistorial = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Historial',
-    texto: 'Los preparados ya finalizados o anulados, con su lote y responsable.',
+    texto: 'Preparados finalizados o anulados.',
   );
 
   @override
@@ -210,13 +210,26 @@ class _VistaState extends State<_Vista> {
     // recién cuando aparece en pantalla, no las ~200 de una vez al entrar. El
     // encabezado es el ítem 0 y se construye entero, así el tour siempre
     // encuentra sus pasos.
-    final lista = svc.historial;
+    final lista = svc.historialFiltrado;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 1 + (lista.isEmpty ? 1 : lista.length),
       itemBuilder: (context, i) {
-        if (i == 0) return _encabezadoYPlan(context, svc);
+        if (i == 0) {
+          // Encabezado + buscador (texto, Desde/Hasta, PDF y Excel de lo filtrado).
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _encabezadoYPlan(context, svc),
+            BarraFiltros(
+              filtro: svc.filtro,
+              onCambio: svc.filtrar,
+              reporte: svc.reporte,
+              hint: 'Buscar por sabor, lote, tanque, responsable…',
+            ),
+            const SizedBox(height: 12),
+          ]);
+        }
         if (lista.isEmpty) {
+          if (svc.filtro.activo) return const SinResultados();
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('Todavía no hay preparados finalizados.',
@@ -583,10 +596,11 @@ class _TarjetaPreparado extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text('${p.sabor ?? ''} · Lote ${p.nLote}',
+                  child: Text('${p.sabor ?? ''} · ${p.sinSubir ? 'Lote al subir' : 'Lote ${p.nLote}'}',
                       style: const TextStyle(
                           fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
+                if (p.sinSubir) const ChipSinSubir(),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

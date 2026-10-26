@@ -27,26 +27,22 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
   final _pasoCategoria = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Categoría',
-    texto: 'Elegí dónde vive este ítem dentro del almacén. Solo se puede crear en una '
-        'categoría propia sin subdivisiones — si la categoría tiene divisiones, primero '
-        'entrá a la que corresponda.',
+    texto: 'Dónde va el ítem (una categoría sin subdivisiones).',
   );
   final _pasoUnidad = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Unidad de medida',
-    texto: 'La unidad en la que se cuenta el stock (kg, unidades, litros…).',
+    texto: 'En qué se cuenta el stock.',
   );
   final _pasoCompra = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Se compra en / por envase',
-    texto: 'Cómo llega de fábrica (quintal, bidón, bolsa) y cuántas unidades trae cada '
-        'envase — con esto el sistema convierte automáticamente al recibir un pedido.',
+    texto: 'Cómo llega y cuánto trae cada envase.',
   );
   final _pasoCaracteristicas = PasoAyuda(
     clave: GlobalKey(),
     titulo: 'Características (opcional)',
-    texto: 'Color, formato, peso, ancho o micronaje: solo para ítems donde esto '
-        'distingue una variante de otra (ej. tapas, preformas).',
+    texto: 'Solo si distingue variantes (ej. tapas).',
   );
 
   List<PasoAyuda> _pasosAyuda() =>

@@ -161,6 +161,52 @@ void main() {
     expect(ColaOffline.cantidadPendientes, 0);
   });
 
+  test('si la red falla recién después de que la pantalla dio error, no se encola', () async {
+    // Wifi sin salida: la falla llega tarde. La pantalla ya mostró "no se pudo"
+    // (espera 8 s); encolarlo igual lo registraría dos veces si se reintenta.
+    ClienteOffline.limiteParaEncolar = const Duration(milliseconds: 50);
+    addTearDown(() => ClienteOffline.limiteParaEncolar = const Duration(seconds: 7));
+    final lenta = ClienteOffline(MockClient((_) async {
+      await Future.delayed(const Duration(milliseconds: 120));
+      throw const SocketException('Connection timed out');
+    }));
+    await expectLater(
+      () => _enviar(lenta, _pedido('POST', '/rest/v1/rpc/soda_registrar_entrega', cuerpo: {'p': 1})),
+      throwsA(isA<SocketException>()),
+    );
+    expect(ColaOffline.cantidadPendientes, 0);
+  });
+
+  test('Reintentar devuelve la operación a su lugar, antes de lo que se hizo después', () async {
+    final offline = ClienteOffline(_sinRed);
+    await _enviar(offline, _pedido('POST', '/rest/v1/rpc/inv_registrar_movimiento', cuerpo: {'n': 1}));
+    await _enviar(offline, _pedido('POST', '/rest/v1/rpc/inv_registrar_movimiento', cuerpo: {'n': 2}));
+    await ColaOffline.marcarError(ColaOffline.pendientes().first, 'Stock insuficiente');
+    await ColaOffline.reintentar(ColaOffline.conError().single);
+    final orden = [
+      for (final op in ColaOffline.pendientes()) (jsonDecode(utf8.decode(op.cuerpo)) as Map)['n']
+    ];
+    expect(orden, [1, 2]);
+    expect(ColaOffline.cantidadConError, 0);
+  });
+
+  test('lo iniciado sin internet se puede listar hasta que se finaliza o se sube', () async {
+    final offline = ClienteOffline(_sinRed);
+    final r = await _enviar(offline,
+        _pedido('POST', '/rest/v1/rpc/soplado_iniciar_corrida', cuerpo: {'p_sabor_id': 3}));
+    final id = jsonDecode(r.body) as int;
+    const cierran = ['soplado_finalizar_corrida'];
+    final enCurso = ColaOffline.rpcSinSubir('soplado_iniciar_corrida', usuario: 'u1', cierran: cierran);
+    expect(enCurso.single.id, id);
+    expect(enCurso.single.datos['p_sabor_id'], 3);
+    expect(ColaOffline.rpcSinSubir('soplado_iniciar_corrida', usuario: 'otro'), isEmpty);
+
+    await _enviar(offline,
+        _pedido('POST', '/rest/v1/rpc/soplado_finalizar_corrida', cuerpo: {'p_id': id}));
+    expect(ColaOffline.rpcSinSubir('soplado_iniciar_corrida', usuario: 'u1', cierran: cierran),
+        isEmpty);
+  });
+
   test('lo que exige estar en línea no se encola', () async {
     final c = ClienteOffline(_sinRed);
     for (final ruta in ['/rest/v1/rpc/crear_usuario_admin', '/rest/v1/permisos_rol']) {

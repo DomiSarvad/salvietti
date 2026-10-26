@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
+import '../../../shared/filas_sin_subir.dart';
 import '../../../shared/realtime.dart';
 
 export '../../../shared/realtime.dart' show Suscripcion, SuscripcionNula;
@@ -98,7 +99,31 @@ class SupabaseJarabesRepository implements JarabesRepository {
         .order('hora_inicio', ascending: false)
         .limit(limite)
         .timeout(SupabaseService.timeoutRed);
-    return [for (final f in filas) Preparado.fromMap(f)];
+    return [...await _sinSubir(), for (final f in filas) Preparado.fromMap(f)];
+  }
+
+  /// Preparados iniciados sin internet que siguen en la cola (ver
+  /// filasSinSubir). El N° de lote lo pone el servidor al subir: mientras
+  /// tanto va 0 y la tarjeta lo dice.
+  Future<List<Preparado>> _sinSubir() async {
+    final filas = filasSinSubir('jarabes_iniciar_preparado',
+        cierran: const ['jarabes_finalizar_preparado', 'jarabes_anular_preparado'],
+        renombrar: const {'p_cantidad': 'cantidad_preparados'});
+    if (filas.isEmpty) return const [];
+    var sab = <int, String>{};
+    try {
+      sab = {for (final s in await sabores()) s.id: s.nombre};
+    } catch (_) {
+      // Sin copia del catálogo: la tarjeta sale sin el nombre, pero sale.
+    }
+    return [
+      for (final f in filas)
+        Preparado.fromMap({
+          ...f,
+          'n_lote': 0,
+          'sabores': {'nombre': sab[f['sabor_id']]},
+        }),
+    ];
   }
 
   @override

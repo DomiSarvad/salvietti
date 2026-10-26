@@ -60,7 +60,7 @@ create or replace function public.crear_usuario_admin(
 ) returns uuid
 language plpgsql
 security definer
-set search_path = public, auth, pg_temp
+set search_path = public, auth, extensions, pg_temp -- pgcrypto vive en `extensions` (ver v44)
 as $$
 declare
     v_uid uuid;

@@ -7,6 +7,8 @@ import 'supabase_service.dart';
 import 'bitacora_service.dart';
 import 'cliente_offline.dart';
 import 'datos_empleado_service.dart';
+import '../shared/ayuda/tour_ayuda.dart';
+import '../shared/ayuda/tours_vistos_repository.dart';
 import 'hive_service.dart';
 import 'permisos_service.dart';
 import 'sesion_inactividad.dart';
@@ -220,6 +222,7 @@ class AuthService extends ChangeNotifier {
             error: 'Tu cuenta está desactivada. Comunicate con el Gerente.');
       }
       _usuarioActual = usuario;
+      TourAyuda.usarSinServidor(usuario.id);
       // Primera vez sin haber cargado sus datos: se le piden igual (se guardan
       // en la compu y se suben con la cola cuando vuelva internet).
       _datosPendientes = guardado.datosCompletos == false;
@@ -325,8 +328,12 @@ class AuthService extends ChangeNotifier {
     final datosFuturo = DatosEmpleadoService.obtener(userId)
         .then<bool?>((d) => d?.completo ?? false)
         .catchError((_) => null);
+    // Recorridos que ya vio (v45), antes de mostrar el menú: si no, la
+    // primera pantalla arrancaba su recorrido solo antes de saberlo.
+    final tours = TourAyuda.cargarDelUsuario(userId, SupabaseToursVistosRepository());
     final permisos = await PermisosService.delRol(perfil.rol);
     _usuarioActual = perfil.conPermisos(permisos);
+    await tours;
     final completo = await datosFuturo;
     _datosCompletosServidor = completo;
     _datosPendientes = completo != null && _usuarioActual!.activo && !completo;
@@ -366,6 +373,7 @@ class AuthService extends ChangeNotifier {
         final guardado = SesionOffline.perfilDe(user.id);
         if (guardado == null) return; // muestra el login
         _usuarioActual = Usuario.fromMap(guardado.perfil).conPermisos(guardado.permisos);
+        TourAyuda.usarSinServidor(user.id);
         _datosPendientes = guardado.datosCompletos == false;
         _restaurarFotoPendienteLocal();
         notifyListeners();
@@ -390,9 +398,12 @@ class AuthService extends ChangeNotifier {
       return 'El correo no tiene un formato válido.';
     }
     try {
+      // Más que el timeout normal: con SMTP propio, Supabase espera al
+      // servidor de correo antes de contestar (con 8 s se cortaba y se veía
+      // "revisá tu conexión" en vez del error real del envío).
       await SupabaseService.client.auth
           .resetPasswordForEmail(correo)
-          .timeout(SupabaseService.timeoutRed);
+          .timeout(const Duration(seconds: 25));
       return null;
     } on Object catch (e) {
       return _mensajeError(e);
@@ -460,11 +471,19 @@ class AuthService extends ChangeNotifier {
         if (avatarUrl != null) 'avatar_url': avatarUrl,
       };
       if (cambios.isEmpty) return null;
-      await SupabaseService.client
+      // Se pide la fila de vuelta: si una regla del servidor (RLS) no deja
+      // editarla, Supabase NO da error, solo no cambia nada y devuelve vacío.
+      // Antes eso pasaba por "guardado" y la foto se perdía al volver a entrar.
+      final filas = await SupabaseService.client
           .from('usuarios')
           .update(cambios)
           .eq('id', _usuarioActual!.id)
+          .select('id')
           .timeout(SupabaseService.timeoutRed);
+      if (filas.isEmpty) {
+        return 'El servidor no dejó guardar el cambio en tu perfil. Avisale al Gerente '
+            '(falta ejecutar la migración v47).';
+      }
       _usuarioActual = Usuario(
         id: _usuarioActual!.id,
         nombreCompleto: nombre ?? _usuarioActual!.nombreCompleto,
@@ -513,7 +532,8 @@ class AuthService extends ChangeNotifier {
       final urlPublica =
           SupabaseService.client.storage.from('avatars').getPublicUrl(ruta);
       final url = '$urlPublica?t=${DateTime.now().millisecondsSinceEpoch}';
-      await actualizarPerfil(avatarUrl: url);
+      // Si el servidor no la aceptó, sigue pendiente (no se borra sin haberse guardado).
+      if (await actualizarPerfil(avatarUrl: url) != null) return;
       await HiveService.limpiarFotoPendiente();
       _fotoLocalPendiente = null;
       notifyListeners();
@@ -569,6 +589,7 @@ class AuthService extends ChangeNotifier {
       // Sin internet o sin v42: no impide cerrar la sesión.
     }
     ClienteOffline.olvidarMemoria(); // catálogos en memoria del usuario que sale
+    TourAyuda.olvidarUsuario();
     _sinConexion = false;
     _dejarDeEsperar();
     try {
@@ -671,6 +692,20 @@ class AuthService extends ChangeNotifier {
     final s = e.toString();
     if (s.contains('Invalid login credentials')) {
       return 'Correo o contraseña incorrectos.';
+    }
+    // Límite de envío de correos de Supabase (pedir el código dos veces seguidas).
+    if (s.contains('over_email_send_rate_limit') || s.contains('statusCode: 429')) {
+      final seg = RegExp(r'after (\d+) seconds').firstMatch(s)?.group(1);
+      return seg != null
+          ? 'Ya se envió un código hace poco. Esperá $seg segundos y probá de nuevo.'
+          : 'Se enviaron demasiados correos seguidos. Esperá unos minutos y probá de nuevo.';
+    }
+    // El servidor de correo (SMTP) configurado en Supabase no aceptó el envío.
+    if (s.contains('Error sending') || s.contains('unexpected_failure') || s.contains('statusCode: 500')) {
+      return 'No se pudo enviar el correo. Revisá la configuración de correo (SMTP) en Supabase.';
+    }
+    if (s.contains('otp_expired') || s.contains('Token has expired or is invalid')) {
+      return 'El código no es válido o ya venció. Pedí uno nuevo.';
     }
     // Falla de red real (sin internet, DNS, servidor inalcanzable) — no
     // es un error de credenciales, así que no tiene sentido mostrar la

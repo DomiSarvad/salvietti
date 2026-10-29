@@ -59,6 +59,53 @@ class _ModalFormularioState extends State<ModalFormulario> {
     final pantalla = MediaQuery.of(context).size;
     final anchoUtil = (pantalla.width - 32).clamp(280.0, widget.ancho);
 
+    // En el celular: página a pantalla completa con la barra negra y flecha de
+    // volver (como Mi perfil), y el botón abajo. En la compu, la ventana.
+    if (pantalla.width < 600) {
+      return Dialog.fullscreen(
+        backgroundColor: Colors.white,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: AppColors.negro,
+            surfaceTintColor: AppColors.negro,
+            foregroundColor: Colors.white,
+            leading: IconButton(
+              tooltip: 'Volver',
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => Navigator.pop(context, false),
+            ),
+            titleSpacing: 0,
+            title: Text(widget.titulo,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            actions: [
+              if (widget.idTour != null && widget.pasosAyuda != null)
+                BotonAyuda(idTour: widget.idTour!, pasos: widget.pasosAyuda!),
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: widget.child,
+          ),
+          bottomNavigationBar: SafeArea(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF5F7FA),
+                border: Border(top: BorderSide(color: Color(0xFFE3E7EB))),
+              ),
+              child: _BotonDegradado(
+                texto: widget.textoBoton,
+                cargando: widget.guardando,
+                onTap: widget.onGuardar,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

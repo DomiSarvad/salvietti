@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/existencia_item.dart';
 import '../services/inventario_service.dart';
@@ -48,7 +48,7 @@ class _ConteoDialogState extends State<ConteoDialog> {
         .registrarConteo(widget.item, cantidadReal: valor, observaciones: _obs.text);
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Conteo registrado.');
+      avisoExito(context, 'Conteo registrado');
       Navigator.pop(context, true);
     } else {
       setState(() {

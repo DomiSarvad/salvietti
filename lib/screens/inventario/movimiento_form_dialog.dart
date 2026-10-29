@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/alertas.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/insumo.dart';
@@ -95,7 +96,7 @@ class _MovimientoFormDialogState extends State<MovimientoFormDialog> {
     final enviadoDirecto = await InventarioService.registrarMovimiento(mov);
     if (mounted) {
       if (enviadoDirecto) {
-        mostrarExito(context, 'Registro guardado.');
+        avisoExito(context, 'Registro guardado');
       } else {
         mostrarInfo(context,
             'Sin conexión: guardado localmente. Se sincronizará automáticamente.');

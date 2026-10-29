@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../shared/alertas.dart';
+import '../../shared/pagina_o_dialogo.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/produccion.dart';
 import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
 import '../../utils/formatters.dart';
-import '../../utils/notificaciones.dart';
 import '../../utils/responsive.dart';
 
 /// Una fila de la tabla que se está armando: el producto elegido más la
@@ -250,7 +251,7 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
       );
     }
     if (mounted) {
-      mostrarExito(context, 'Plan guardado.');
+      avisoExito(context, 'Plan guardado');
       Navigator.pop(context, true);
     }
   }
@@ -259,11 +260,10 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
   Widget build(BuildContext context) {
     final usuario = context.watch<AuthService>().usuarioActual!;
 
-    return AlertDialog(
-      title: const Text('Armar plan de producción'),
-      content: SizedBox(
-        width: 640,
-        child: Column(
+    return DialogoAdaptable(
+      titulo: 'Armar plan de producción',
+      ancho: 640,
+      contenido: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -441,8 +441,7 @@ class _ConstructorPlanDialogState extends State<ConstructorPlanDialog> {
             ),
           ],
         ),
-      ),
-      actions: [
+      acciones: [
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar')),

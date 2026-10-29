@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../presencia/widgets/aviso_conexion_areas.dart';
@@ -12,6 +13,7 @@ import '../../../utils/texto.dart';
 import '../models/jarabes_modelos.dart';
 import '../repositories/jarabes_repository.dart';
 import '../services/jarabes_service.dart';
+import '../widgets/detalle_preparado.dart';
 import '../widgets/finalizar_preparado_dialog.dart';
 import '../widgets/iniciar_preparado_dialog.dart';
 import '../widgets/proponer_receta_dialog.dart';
@@ -551,28 +553,10 @@ class _TarjetaPreparado extends StatelessWidget {
   }
 
   Future<void> _anular(BuildContext context) async {
-    final motivo = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('Anular preparado'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            maxLength: 300,
-            decoration: const InputDecoration(labelText: 'Motivo'),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text),
-                child: const Text('Anular')),
-          ],
-        );
-      },
+    final motivo = await confirmarConMotivo(
+      context,
+      titulo: '¿Anular el preparado?',
+      texto: 'Queda en el historial como anulado.',
     );
     if (motivo == null || !context.mounted) return;
     final error = await svc.anularPreparado(p, motivo);
@@ -588,7 +572,10 @@ class _TarjetaPreparado extends StatelessWidget {
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => abrirDetallePreparado(context, svc, p),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -657,6 +644,7 @@ class _TarjetaPreparado extends StatelessWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

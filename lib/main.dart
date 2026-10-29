@@ -67,6 +67,8 @@ class SalviettiApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
               useMaterial3: true,
+              // La incluida en assets/fonts (en la web no se baja de internet).
+              fontFamily: 'Roboto',
               colorSchemeSeed: AppColors.primario,
               scaffoldBackgroundColor: AppColors.fondo,
             ),

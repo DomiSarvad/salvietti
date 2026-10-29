@@ -1,12 +1,17 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
 import '../models/solicitud.dart';
+import '../../jarabes/models/jarabes_modelos.dart' show RecetaPropuesta;
 
 /// Acceso a datos de Solicitudes a Gerencia. Las escrituras pasan por
 /// funciones del servidor (validan permisos y son atómicas); acá solo se
 /// llaman.
 abstract class SolicitudesRepository {
   Future<List<Solicitud>> solicitudes({int limite = 300});
+
+  /// Propuestas de cambio de receta (Jarabes) desde [desde], de cualquier
+  /// estado: su historial se ve junto a las solicitudes.
+  Future<List<RecetaPropuesta>> recetas(DateTime desde);
   Future<List<ItemReferencia>> items({String? busqueda});
   Future<int> crear(SolicitudNueva s);
   Future<void> resolver(int id, {required bool aprobar, String? respuesta});
@@ -14,6 +19,17 @@ abstract class SolicitudesRepository {
 
 class SupabaseSolicitudesRepository implements SolicitudesRepository {
   SupabaseClient get _db => SupabaseService.client;
+
+  @override
+  Future<List<RecetaPropuesta>> recetas(DateTime desde) async {
+    final filas = await _db
+        .from('jarabes_recetas')
+        .select('*, sabores(nombre), jarabes_receta_items(cantidad_por_preparado, inv_items(detalle, unidad))')
+        .gte('creada_en', desde.toUtc().toIso8601String())
+        .order('creada_en', ascending: false)
+        .timeout(SupabaseService.timeoutRed);
+    return [for (final f in filas) RecetaPropuesta.fromMap(f)];
+  }
 
   @override
   Future<List<Solicitud>> solicitudes({int limite = 300}) async {

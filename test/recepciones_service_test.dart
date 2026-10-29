@@ -105,7 +105,7 @@ BorradorRecepcion _borrador({
   DateTime? fab,
   DateTime? ven,
   String senasac = '',
-  FotoAdjunta? foto,
+  List<FotoAdjunta> fotos = const [],
   double? precio,
 }) =>
     BorradorRecepcion(
@@ -118,7 +118,7 @@ BorradorRecepcion _borrador({
       fechaFabricacion: fab,
       fechaVencimiento: ven,
       senasac: senasac,
-      foto: foto,
+      fotos: fotos,
       precioTransporte: precio,
     );
 
@@ -187,18 +187,37 @@ void main() {
       expect(await guardar(_borrador(ven: DateTime(2026, 9, 1))), contains('vencido'));
     });
 
+    test('dice qué campo falló, para señalarlo en el formulario', () async {
+      final s = await _svc(_almacenGeneral);
+      await s.guardar(_borrador(item: null));
+      expect(s.campoConError, CampoRecepcion.item);
+      await s.guardar(_borrador(real: null));
+      expect(s.campoConError, CampoRecepcion.cantidadReal);
+      await s.guardar(_borrador(senasac: 'ab<>cd'));
+      expect(s.campoConError, CampoRecepcion.senasac);
+      expect(await s.guardar(_borrador()), isNull);
+      expect(s.campoConError, isNull);
+    });
+
     test('valida SENASAG, precio y foto', () async {
       expect(await guardar(_borrador(senasac: 'ab<>cd')), contains('SENASAG'));
       expect(await guardar(_borrador(precio: -5)), contains('negativo'));
       expect(
           await guardar(_borrador(
-              foto: FotoAdjunta(bytes: Uint8List(10), nombre: 'factura.pdf'))),
+              fotos: [FotoAdjunta(bytes: Uint8List(10), nombre: 'factura.pdf')])),
           contains('JPG'));
       expect(
           await guardar(_borrador(
-              foto: FotoAdjunta(
-                  bytes: Uint8List(RecepcionesService.maxFotoBytes + 1), nombre: 'a.jpg'))),
+              fotos: [
+            FotoAdjunta(bytes: Uint8List(RecepcionesService.maxFotoBytes + 1), nombre: 'a.jpg')
+          ])),
           contains('5 MB'));
+      expect(
+          await guardar(_borrador(fotos: [
+            for (var i = 0; i <= RecepcionesService.maxFotos; i++)
+              FotoAdjunta(bytes: Uint8List(10), nombre: 'f$i.jpg')
+          ])),
+          contains('hasta'));
     });
 
     test('no deja elegir una unidad que no corresponde al ítem', () async {
@@ -223,15 +242,20 @@ void main() {
       expect(RecepcionesService.diferenciaDe(_borrador(real: null)), isNull);
     });
 
-    test('sube la foto y guarda su ruta; los textos vacíos van como null', () async {
+    test('sube todas las fotos y guarda sus rutas; los textos vacíos van como null', () async {
       final repo = _Repo();
       final s = await _svc(_almacenGeneral, repo);
-      final error = await s.guardar(_borrador(
-          foto: FotoAdjunta(bytes: Uint8List(100), nombre: 'Factura.JPG')));
+      final error = await s.guardar(_borrador(fotos: [
+        FotoAdjunta(bytes: Uint8List(100), nombre: 'Factura.JPG'),
+        FotoAdjunta(bytes: Uint8List(100), nombre: 'etiqueta.png'),
+      ]));
       expect(error, isNull);
-      expect(repo.fotos.single, matches(RegExp(r'^general/2026-09/\d+_[0-9a-f]+\.jpg$')));
+      expect(repo.fotos, hasLength(2));
+      expect(repo.fotos.first, matches(RegExp(r'^general/2026-09/\d+_[0-9a-f]+\.jpg$')));
       final g = repo.guardadas.single;
-      expect(g.fotoUrl, repo.fotos.single);
+      expect(g.fotos, repo.fotos);
+      expect(g.toMap()['foto_url'], repo.fotos.first);
+      expect(g.toMap()['fotos'], repo.fotos);
       expect(g.nFactura, isNull);
       expect(g.senasac, isNull);
     });

@@ -48,6 +48,12 @@ class JarabesService extends ChangeNotifier {
 
   List<Preparado> get enCurso =>
       preparados.where((p) => p.estado == EstadoPreparado.enCurso).toList();
+
+  /// Todos los preparados de ese día (cualquier estado), del más temprano al último.
+  List<Preparado> preparadosDelDia(DateTime dia) => preparados
+      .where((p) => p.fecha.year == dia.year && p.fecha.month == dia.month && p.fecha.day == dia.day)
+      .toList()
+    ..sort((a, b) => a.horaInicio.compareTo(b.horaInicio));
   List<Preparado> get historial =>
       preparados.where((p) => p.estado != EstadoPreparado.enCurso).toList();
 

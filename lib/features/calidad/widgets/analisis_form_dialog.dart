@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/calidad_modelos.dart';
 import '../services/calidad_service.dart';
@@ -56,7 +56,7 @@ class _AnalisisFormDialogState extends State<AnalisisFormDialog> {
     ));
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Análisis registrado.');
+      avisoExito(context, 'Análisis registrado');
       Navigator.pop(context, true);
     } else {
       setState(() {

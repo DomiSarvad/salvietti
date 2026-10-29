@@ -14,6 +14,9 @@ class ItemInventario {
   /// color, formato, peso_g, ancho_mm, micronaje… (solo los que se llenan).
   final Map<String, dynamic> atributos;
 
+  /// Foto del ítem (v48, bucket público "items").
+  final String? fotoUrl;
+
   const ItemInventario({
     this.id,
     this.codigo,
@@ -26,7 +29,23 @@ class ItemInventario {
     this.stockMinimo,
     this.consumoDiarioManual,
     this.atributos = const {},
+    this.fotoUrl,
   });
+
+  ItemInventario conFoto(String? url) => ItemInventario(
+        id: id,
+        codigo: codigo,
+        categoriaId: categoriaId,
+        detalle: detalle,
+        unidad: unidad,
+        unidadCompra: unidadCompra,
+        factorCompra: factorCompra,
+        unidadesPorCaja: unidadesPorCaja,
+        stockMinimo: stockMinimo,
+        consumoDiarioManual: consumoDiarioManual,
+        atributos: atributos,
+        fotoUrl: url,
+      );
 
   factory ItemInventario.fromMap(Map<String, dynamic> m) => ItemInventario(
         id: (m['id'] as num).toInt(),
@@ -40,6 +59,7 @@ class ItemInventario {
         stockMinimo: (m['stock_minimo'] as num?)?.toDouble(),
         consumoDiarioManual: (m['consumo_diario_manual'] as num?)?.toDouble(),
         atributos: Map<String, dynamic>.from((m['atributos'] as Map?) ?? const {}),
+        fotoUrl: m['foto_url'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -52,5 +72,7 @@ class ItemInventario {
         'stock_minimo': stockMinimo,
         'consumo_diario_manual': consumoDiarioManual,
         'atributos': atributos,
+        // Solo con foto: así guardar un ítem sigue andando sin haber corrido v48.
+        if (fotoUrl != null) 'foto_url': fotoUrl,
       };
 }

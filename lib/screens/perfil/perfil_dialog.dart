@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data' show Uint8List;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
 import '../../core/constants.dart';
 import '../../models/usuario.dart';
 import '../../services/auth_service.dart';
+import '../../services/cliente_offline.dart';
 import '../../services/datos_empleado_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/responsive.dart';
@@ -218,11 +219,18 @@ class _PerfilDialogState extends State<PerfilDialog>
         _error = error;
         if (error == null) _avatarUrlActual = url;
       });
-    } catch (_) {
-      // Sin conexión (u otro error de red): no se pierde la foto elegida.
-      // Se guarda localmente y se muestra de inmediato; el propio sistema
-      // la sube sola en cuanto detecte conexión (SyncService).
+    } catch (e) {
       if (!mounted) return;
+      // Solo una falla de RED va a la cola local. Antes cualquier error (permiso
+      // del bucket, formato) se tomaba como "sin conexión": la foto se veía desde
+      // este navegador, nunca llegaba al servidor y se perdía al borrar sus datos.
+      if (!ClienteOffline.esFallaDeRed(e)) {
+        setState(() => _error = 'No se pudo subir la foto. Probá de nuevo o con otra imagen.');
+        debugPrint('Subir foto de perfil: $e');
+        return;
+      }
+      // Sin conexión: no se pierde la foto elegida. Se guarda localmente y se
+      // muestra de inmediato; el sistema la sube sola al volver la conexión.
       final ext = archivo.name.contains('.') ? archivo.name.split('.').last : 'jpg';
       final bytes = await archivo.readAsBytes();
       if (!mounted) return;

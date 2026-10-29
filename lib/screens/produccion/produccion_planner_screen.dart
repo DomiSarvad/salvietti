@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/produccion.dart';
@@ -9,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
 import '../../services/sync_service.dart';
 import '../../shared/ayuda/tour_ayuda.dart';
+import '../../shared/pagina_o_dialogo.dart';
 import '../../utils/formatters.dart';
 import 'constructor_plan_dialog.dart';
 import 'editar_consumo_dialog.dart';
@@ -115,10 +115,9 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
               'Primero cargá al menos un producto desde "Productos".')));
       return;
     }
-    final guardado = await showDialog<bool>(
-      context: context,
-      builder: (_) =>
-          ConstructorPlanDialog(planId: _plan!.id, productos: _productos),
+    final guardado = await abrirAdaptable<bool>(
+      context,
+      (_) => ConstructorPlanDialog(planId: _plan!.id, productos: _productos),
     );
     if (guardado != true) return;
     // Lo de siempre después de armar el plan: mandarlo por WhatsApp a planta.
@@ -208,12 +207,12 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
   }
 
   Future<void> _abrirCatalogo() async {
-    await showDialog(context: context, builder: (_) => const ProductosCatalogoDialog());
+    await abrirAdaptable(context, (_) => const ProductosCatalogoDialog());
     _cargar();
   }
 
   Future<void> _abrirEditarConsumo() async {
-    await showDialog(context: context, builder: (_) => const EditarConsumoDialog());
+    await abrirAdaptable(context, (_) => const EditarConsumoDialog());
   }
 
   Future<void> _guardarImagen() async {
@@ -223,25 +222,6 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
       context: context,
       builder: (_) => ProduccionCapturaDialog(plan: _plan!, usuario: usuario),
     );
-  }
-
-  void _copiarResumen() {
-    final plan = _plan;
-    if (plan == null || plan.detalle.isEmpty) return;
-    final buffer = StringBuffer('Producción de hoy — ${fmtFecha(plan.fecha)}\n\n');
-    for (final d in plan.detalle) {
-      final nombre = d.nombreProducto ?? d.sabor;
-      if (d.completado) {
-        buffer.writeln('✔ $nombre — ${fmtNum(d.litrosProducidos, decimales: 0)} L'
-            '${d.botellasProducidas != null ? ' (${fmtNum(d.botellasProducidas, decimales: 0)} botellas)' : ''}'
-            '${d.mermaLitros > 0 ? ' — merma: ${fmtNum(d.mermaLitros, decimales: 0)} L' : ''}');
-      } else {
-        buffer.writeln('• $nombre — ${fmtNum(d.litrosPlanificados, decimales: 0)} L planificados');
-      }
-    }
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Resumen copiado. Pégalo donde quieras compartirlo.')));
   }
 
   @override
@@ -269,7 +249,7 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
           ),
           const SizedBox(height: 12),
           // Quien no arma el plan (Gerente, las áreas) solo lo mira: no ve
-          // botones. Compartir/Copiar resumen son para mandarlo a planta por
+          // botones. Compartir es para mandarlo a planta por
           // WhatsApp, y eso lo hace el Jefe de Producción.
           if (usuario.puedeEditarProduccion)
             // Wrap en vez de Row: con varios botones, en una ventana angosta
@@ -285,11 +265,6 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                       : _guardarImagen,
                   icon: const Icon(Icons.share_outlined),
                   label: const Text('Compartir'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _copiarResumen,
-                  icon: const Icon(Icons.copy_all_outlined),
-                  label: const Text('Copiar resumen'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _abrirCatalogo,

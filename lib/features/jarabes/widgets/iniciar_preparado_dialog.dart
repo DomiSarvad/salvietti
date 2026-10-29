@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../core/constants.dart';
 import '../../../utils/notificaciones.dart';
 import '../../../utils/texto.dart';
@@ -121,7 +122,7 @@ class _IniciarPreparadoDialogState extends State<IniciarPreparadoDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Preparado iniciado.');
+      avisoExito(context, 'Preparado iniciado');
       Navigator.pop(context, true);
     } else {
       setState(() {

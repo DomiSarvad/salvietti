@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
+import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -289,21 +291,14 @@ class _Cabecera extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
+        // Una sola fila que se desliza de costado, como las áreas de Informes.
         pasoAlmacenChips.envolver(
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final a in svc.almacenes)
-                ChoiceChip(
-                  label: Text(a.nombre),
-                  selected: a.id == svc.almacenId,
-                  selectedColor: AppColors.primario,
-                  labelStyle: TextStyle(
-                      color: a.id == svc.almacenId ? Colors.white : Colors.black87),
-                  onSelected: (_) => svc.seleccionarAlmacen(a.id),
-                ),
-            ],
+          OpcionesDeslizables<String?>(
+            opciones: [for (final a in svc.almacenes) a.id],
+            seleccionada: svc.almacenId,
+            etiqueta: (id) => svc.almacenes.firstWhere((a) => a.id == id).nombre,
+            icono: (id) => iconoAlmacen(svc.almacenes.firstWhere((a) => a.id == id).nombre),
+            onElegir: (id) => svc.seleccionarAlmacen(id!),
           ),
         ),
         const SizedBox(height: 10),
@@ -317,20 +312,11 @@ class _Cabecera extends StatelessWidget {
               filtro: svc.filtro,
               onCambio: svc.filtrar,
               reporte: svc.reporte,
-              hint: 'Buscar por detalle o código…',
+              // Con coma, varios productos a la vez: "tapa negra, preforma 28".
+              hint: 'Buscar (varios: separá con coma)',
             ),
-            if (svc.muestraFiltroPedido) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilterChip(
-                  label: const Text('Pedido'),
-                  avatar: const Icon(Icons.shopping_cart_outlined, size: 16),
-                  selected: svc.soloPedido,
-                  onSelected: (_) => svc.alternarSoloPedido(),
-                ),
-              ),
-            ],
+            const SizedBox(height: 8),
+            _FiltrosExtra(svc: svc),
             if (svc.cargandoPeriodo)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -555,21 +541,17 @@ class _TablaItems extends StatelessWidget {
   }
 
   Future<void> _eliminar(BuildContext context, ExistenciaItem item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar ítem'),
-        content: Text('¿Eliminar "${item.detalle}"? Deja de mostrarse en el inventario.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
-        ],
-      ),
+    final ok = await confirmar(
+      context,
+      titulo: '¿Eliminar ítem?',
+      texto: '"${item.detalle}" deja de mostrarse en el inventario.',
+      textoSi: 'Sí, eliminar',
+      peligro: true,
     );
-    if (ok != true || !context.mounted) return;
+    if (!ok || !context.mounted) return;
     final error = await svc.desactivarItem(item.itemId);
     if (!context.mounted) return;
-    error == null ? mostrarExito(context, 'Ítem eliminado.') : mostrarError(context, error);
+    error == null ? avisoExito(context, 'Eliminado', 'El ítem se quitó del inventario.') : mostrarError(context, error);
   }
 
   Color _colorSituacion(SituacionStock s) {
@@ -698,5 +680,101 @@ class _TablaItems extends StatelessWidget {
           ),
       ])),
     ]);
+  }
+}
+
+/// Debajo del buscador, en una fila que se desliza: "Tipo" (elegir varios
+/// tipos de una vez), los tipos elegidos (con x para quitarlos) y "Pedido".
+class _FiltrosExtra extends StatelessWidget {
+  final InventarioService svc;
+  const _FiltrosExtra({required this.svc});
+
+  Future<void> _elegir(BuildContext context) async {
+    final elegidos = {...svc.tiposFiltro};
+    final r = await showModalBottomSheet<Set<int>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.7),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Filtrar por tipo',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              Flexible(
+                child: ListView(shrinkWrap: true, children: [
+                  for (final t in svc.tipos)
+                    CheckboxListTile(
+                      value: elegidos.contains(t.id),
+                      title: Text(t.nombre),
+                      activeColor: AppColors.primario,
+                      onChanged: (v) => setLocal(() => v == true ? elegidos.add(t.id) : elegidos.remove(t.id)),
+                    ),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, <int>{}),
+                    child: const Text('Quitar todos'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                    onPressed: () => Navigator.pop(ctx, elegidos),
+                    child: const Text('Aplicar'),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    if (r != null) svc.filtrarTipos(r);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final elegidos = [for (final t in svc.tipos) if (svc.tiposFiltro.contains(t.id)) t];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: [
+        ActionChip(
+          avatar: const Icon(Icons.filter_list, size: 16),
+          label: Text(elegidos.isEmpty ? 'Tipo' : 'Tipo (${elegidos.length})'),
+          onPressed: svc.tipos.isEmpty ? null : () => _elegir(context),
+        ),
+        for (final t in elegidos)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: InputChip(
+              label: Text(t.nombre),
+              selected: true,
+              selectedColor: AppColors.primario.withValues(alpha: 0.15),
+              showCheckmark: false,
+              onDeleted: () => svc.filtrarTipos({...svc.tiposFiltro}..remove(t.id)),
+            ),
+          ),
+        if (svc.muestraFiltroPedido)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: FilterChip(
+              label: const Text('Pedido'),
+              avatar: const Icon(Icons.shopping_cart_outlined, size: 16),
+              selected: svc.soloPedido,
+              onSelected: (_) => svc.alternarSoloPedido(),
+            ),
+          ),
+      ]),
+    );
   }
 }

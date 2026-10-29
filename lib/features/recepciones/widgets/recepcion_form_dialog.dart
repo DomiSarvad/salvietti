@@ -1,8 +1,10 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../../shared/aviso_campo.dart';
+import '../../../shared/alertas.dart';
+import '../../../core/constants.dart';
 import '../../../shared/busqueda_local.dart';
 import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
 import '../../../utils/texto.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/recepciones_modelos.dart';
@@ -34,11 +36,15 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
   DateTime? _fabricacion;
   DateTime? _vencimiento;
   String _unidad = 'UNI';
-  FotoAdjunta? _foto;
+  final List<FotoAdjunta> _fotos = [];
 
   bool _senasacAuto = false;
   bool _guardando = false;
   String? _error;
+
+  /// Una clave por campo, para señalar con un globo el que falta o está mal.
+  final _claves = {for (final c in CampoRecepcion.values) c: GlobalKey()};
+  Widget _campo(CampoRecepcion c, Widget hijo) => KeyedSubtree(key: _claves[c], child: hijo);
 
   final _factura = TextEditingController();
   final _cantFactura = TextEditingController();
@@ -115,7 +121,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
         transportador: _transportador.text,
         precioTransporte: _num(_precio),
         observaciones: _obs.text,
-        foto: _foto,
+        fotos: List.of(_fotos),
       );
 
   /// Completa el SENASAG si ya se conoce para ese producto y proveedor, sin
@@ -153,19 +159,24 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
   Future<void> _elegirFoto() async {
     try {
       final r = await FilePicker.pickFiles(
-        dialogTitle: 'Foto de la factura o de la etiqueta',
+        dialogTitle: 'Fotos de la factura o de la etiqueta',
         type: FileType.image,
+        allowMultiple: true,
         withData: true,
       );
       if (r == null || r.files.isEmpty) return;
-      final a = r.files.first;
-      if (a.bytes == null) {
-        setState(() => _error = 'No se pudo leer la foto elegida.');
-        return;
-      }
+      final leidas = [
+        for (final a in r.files)
+          if (a.bytes != null) FotoAdjunta(bytes: a.bytes!, nombre: a.name)
+      ];
+      final lugar = RecepcionesService.maxFotos - _fotos.length;
       setState(() {
-        _foto = FotoAdjunta(bytes: a.bytes!, nombre: a.name);
-        _error = null;
+        _fotos.addAll(leidas.take(lugar));
+        _error = leidas.length < r.files.length
+            ? 'No se pudo leer alguna de las fotos elegidas.'
+            : leidas.length > lugar
+                ? 'Se pueden adjuntar hasta ${RecepcionesService.maxFotos} fotos.'
+                : null;
       });
     } catch (_) {
       setState(() => _error = 'No se pudo abrir el selector de fotos.');
@@ -203,14 +214,18 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
     final error = await _svc.guardar(_borrador());
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Recepción registrada.');
+      avisoExito(context, 'Recepción registrada');
       Navigator.pop(context, true);
-    } else {
-      setState(() {
-        _guardando = false;
-        _error = error;
-      });
+      return;
     }
+    // Si el problema es de un campo, se lo señala con un globo junto a él;
+    // si no (sin conexión, permiso), el mensaje va abajo como antes.
+    final campo = _svc.campoConError;
+    setState(() {
+      _guardando = false;
+      _error = campo == null ? error : null;
+    });
+    if (campo != null) avisarCampo(_claves[campo]!, error);
   }
 
   InputDecoration _deco(String label, {String? ayuda, Widget? sufijo}) => InputDecoration(
@@ -293,7 +308,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   ),
                   sep,
                 ],
-                Autocomplete<ItemRecepcion>(
+                _campo(CampoRecepcion.item, Autocomplete<ItemRecepcion>(
                   displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
                   optionsBuilder: (t) => _items.buscar(t.text),
                   onSelected: (i) {
@@ -317,7 +332,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                         ayuda: _item == null ? 'Escribí para buscar por nombre o código' : null,
                         sufijo: const Icon(Icons.search, size: 18)),
                   ),
-                ),
+                )),
                 sep,
                 Autocomplete<Proveedor>(
                   displayStringForOption: (p) => p.nombre,
@@ -356,8 +371,8 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   ),
                 sep,
                 FilaCampos([
-                  _texto(_factura, 'N° de factura', max: 40),
-                  _fechaCampo(
+                  _campo(CampoRecepcion.factura, _texto(_factura, 'N° de factura', max: 40)),
+                  _campo(CampoRecepcion.fecha, _fechaCampo(
                     'Fecha de recepción',
                     _fecha,
                     () => _elegirFecha(
@@ -365,7 +380,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                       alElegir: (d) => _fecha = d,
                       hasta: DateTime.now(),
                     ),
-                  ),
+                  )),
                 ]),
                 const SizedBox(height: 16),
                 const Text('Cantidades', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -378,7 +393,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   const anchoUnidad = 78.0;
                   const espacio = 10.0;
                   final anchoCampos = (constraints.maxWidth - anchoUnidad - espacio * 2) / 2;
-                  final campoUnidad = _unidades.length > 1
+                  final campoUnidad = _campo(CampoRecepcion.unidad, _unidades.length > 1
                       ? DropdownButtonFormField<String>(
                           initialValue: _unidad,
                           decoration: _deco('Unidad'),
@@ -391,16 +406,16 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                           padding: const EdgeInsets.only(top: 12),
                           child: Text(unidadItem,
                               style: const TextStyle(fontWeight: FontWeight.w700)),
-                        );
+                        ));
                   if (anchoCampos >= 130) {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                            child: _texto(_cantFactura, 'Según factura / etiqueta',
-                                numerico: true)),
+                            child: _campo(CampoRecepcion.cantidadFactura, _texto(_cantFactura, 'Según factura / etiqueta',
+                                numerico: true))),
                         const SizedBox(width: espacio),
-                        Expanded(child: _texto(_cantReal, 'Real (pesado)', numerico: true)),
+                        Expanded(child: _campo(CampoRecepcion.cantidadReal, _texto(_cantReal, 'Real (pesado)', numerico: true))),
                         const SizedBox(width: espacio),
                         SizedBox(width: anchoUnidad, child: campoUnidad),
                       ],
@@ -409,9 +424,9 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _texto(_cantFactura, 'Según factura / etiqueta', numerico: true),
+                      _campo(CampoRecepcion.cantidadFactura, _texto(_cantFactura, 'Según factura / etiqueta', numerico: true)),
                       const SizedBox(height: espacio),
-                      _texto(_cantReal, 'Real (pesado)', numerico: true),
+                      _campo(CampoRecepcion.cantidadReal, _texto(_cantReal, 'Real (pesado)', numerico: true)),
                       const SizedBox(height: espacio),
                       campoUnidad,
                     ],
@@ -438,10 +453,10 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                 const SizedBox(height: 16),
                 const Text('Lote y vencimiento', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                _texto(_lote, 'N° de lote', max: 40),
+                _campo(CampoRecepcion.lote, _texto(_lote, 'N° de lote', max: 40)),
                 sep,
                 FilaCampos([
-                  _fechaCampo(
+                  _campo(CampoRecepcion.fabricacion, _fechaCampo(
                     'Fabricación',
                     _fabricacion,
                     () => _elegirFecha(
@@ -449,16 +464,16 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                         alElegir: (d) => _fabricacion = d,
                         hasta: DateTime.now()),
                     borrar: () => setState(() => _fabricacion = null),
-                  ),
-                  _fechaCampo(
+                  )),
+                  _campo(CampoRecepcion.vencimiento, _fechaCampo(
                     'Vencimiento',
                     _vencimiento,
                     () => _elegirFecha(actual: _vencimiento, alElegir: (d) => _vencimiento = d),
                     borrar: () => setState(() => _vencimiento = null),
-                  ),
+                  )),
                 ]),
                 sep,
-                _texto(
+                _campo(CampoRecepcion.senasac, _texto(
                   _senasac,
                   'SENASAG (ficha técnica)',
                   max: 40,
@@ -466,47 +481,57 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                       ? 'Completado solo: ya se conocía para este producto y proveedor.'
                       : 'Si lo escribís una vez, el sistema lo recuerda.',
                   alCambiar: () => _senasacAuto = false,
-                ),
+                )),
                 const SizedBox(height: 16),
                 const Text('Transporte', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 FilaCampos([
-                  _texto(_transportador, 'Transportador', max: 80),
-                  _texto(_precio, 'Precio (Bs)', numerico: true),
+                  _campo(CampoRecepcion.transportador, _texto(_transportador, 'Transportador', max: 80)),
+                  _campo(CampoRecepcion.precio, _texto(_precio, 'Precio (Bs)', numerico: true)),
                 ]),
                 const SizedBox(height: 16),
                 const Text('Respaldo', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                if (_foto == null)
-                  OutlinedButton.icon(
-                    onPressed: _elegirFoto,
-                    icon: const Icon(Icons.add_a_photo_outlined),
-                    label: const Text('Adjuntar foto de la factura o etiqueta'),
-                  )
-                else
-                  Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(_foto!.bytes, width: 72, height: 72, fit: BoxFit.cover),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: Text(_foto!.nombre, overflow: TextOverflow.ellipsis)),
-                      IconButton(
-                        tooltip: 'Quitar foto',
-                        onPressed: () => setState(() => _foto = null),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ],
-                  ),
+                // Casilleros de foto (factura, etiqueta, la carga…): cada uno con
+                // su nombre y la vista previa; el último, vacío, agrega otra.
+                _campo(CampoRecepcion.fotos, Wrap(spacing: 10, runSpacing: 10, children: [
+                  for (var i = 0; i < _fotos.length; i++)
+                    _CasilleroFoto(
+                      etiqueta: 'Foto ${i + 1}',
+                      child: Stack(fit: StackFit.expand, children: [
+                        Image.memory(_fotos[i].bytes, fit: BoxFit.cover),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: InkWell(
+                            onTap: () => setState(() => _fotos.removeAt(i)),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.black54,
+                              child: Icon(Icons.close, size: 15, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  if (_fotos.length < RecepcionesService.maxFotos)
+                    _CasilleroFoto(
+                      etiqueta: 'Foto ${_fotos.length + 1}',
+                      onTap: _elegirFoto,
+                      child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.add_a_photo_outlined, color: AppColors.primario, size: 28),
+                        SizedBox(height: 4),
+                        Text('Agregar', style: TextStyle(fontSize: 12, color: AppColors.primario)),
+                      ]),
+                    ),
+                ])),
                 sep,
-                TextField(
+                _campo(CampoRecepcion.observaciones, TextField(
                   controller: _obs,
                   maxLength: 300,
                   maxLines: 2,
                   decoration: _deco('Observaciones (opcional)'),
-                ),
+                )),
                 if (_error != null) ...[
                   const SizedBox(height: 4),
                   Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),
@@ -515,4 +540,38 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
             ),
     );
   }
+}
+
+/// Un casillero de foto: el nombre arriba ("Foto 1") y la vista previa en un
+/// recuadro, o el botón para agregar otra.
+class _CasilleroFoto extends StatelessWidget {
+  final String etiqueta;
+  final Widget child;
+  final VoidCallback? onTap;
+  const _CasilleroFoto({required this.etiqueta, required this.child, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(etiqueta, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 104,
+              height: 104,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: onTap == null ? null : AppColors.primario.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: onTap == null ? const Color(0xFFD5DADF) : AppColors.primario.withValues(alpha: 0.6)),
+              ),
+              child: child,
+            ),
+          ),
+        ],
+      );
 }

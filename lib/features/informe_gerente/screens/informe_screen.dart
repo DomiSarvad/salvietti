@@ -221,6 +221,11 @@ class _Dia extends StatelessWidget {
               side: const BorderSide(color: Color(0xFFE3E7EB)),
             ),
             child: Column(children: [
+              // Con un solo sabor el resumen repetiría su fila.
+              if (filas.length > 1) ...[
+                _ResumenDia(t: svc.totalesDe(filas), sabores: filas.length),
+                const Divider(height: 1),
+              ],
               for (var i = 0; i < filas.length; i++) ...[
                 if (i > 0) const Divider(height: 1, indent: 14, endIndent: 14),
                 _Fila(svc: svc, r: filas[i]),
@@ -229,6 +234,56 @@ class _Dia extends StatelessWidget {
           ),
         ]),
       );
+}
+
+/// Cabecera de la tarjeta de un día con varios sabores: el total del día
+/// (solo de los sabores con esperado y producido, como los totales de arriba).
+class _ResumenDia extends StatelessWidget {
+  final TotalesInforme t;
+  final int sabores;
+  const _ResumenDia({required this.t, required this.sabores});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = t.desviacion;
+    final avance = t.esperadas <= 0 ? null : (t.producidas / t.esperadas).clamp(0.0, 1.0);
+    return Container(
+      color: const Color(0xFFF4F6F8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 22, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Text(
+              'Total del día · $sabores sabores'
+              '${t.conDesvio > 0 ? ' · ${t.conDesvio} con desvío' : ''}',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Text(_desviacionTexto(d),
+              style: TextStyle(fontWeight: FontWeight.w700, color: _colorDesviacion(d))),
+        ]),
+        const SizedBox(height: 2),
+        Text(
+          avance == null
+              ? 'Sin sabores con esperado y producido para sumar'
+              : '${fmtNum(t.producidas, decimales: 1)} de ${fmtNum(t.esperadas, decimales: 1)} cajas',
+          style: const TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        if (avance != null) ...[
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: avance,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE3E7EB),
+              color: AppColors.secundario,
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 }
 
 /// Un sabor de un día: barra de avance (producido sobre esperado) y la
@@ -265,6 +320,10 @@ class _Fila extends StatelessWidget {
               Text(r.sabor, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 2),
               Text(
+                // Varios preparados del mismo sabor en el día van sumados en
+                // esta fila (Registro de salidas no dice de qué preparado salió cada caja).
+                '${r.preparados == null ? '' : '${fmtNum(r.preparados, decimales: 0)} '
+                    'preparado${r.preparados == 1 ? '' : 's'} · '}'
                 '${fmtNum(r.cajasProducidas ?? 0, decimales: 1)} de '
                 '${r.cajasEsperadas == null ? '—' : fmtNum(r.cajasEsperadas, decimales: 1)} cajas'
                 '${r.datosIncompletos ? ' · datos incompletos' : ''}',

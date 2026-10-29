@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
+import '../widgets/detalle_corrida_codificacion.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -256,25 +258,10 @@ class _TarjetaCorrida extends StatelessWidget {
       );
 
   Future<void> _anular(BuildContext context) async {
-    final motivo = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('Anular corrida'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            maxLength: 300,
-            decoration: const InputDecoration(labelText: 'Motivo'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Anular')),
-          ],
-        );
-      },
+    final motivo = await confirmarConMotivo(
+      context,
+      titulo: '¿Anular la corrida?',
+      texto: 'Queda en el historial como anulado.',
     );
     if (motivo == null || !context.mounted) return;
     final error = await svc.anularCorrida(c, motivo);
@@ -290,7 +277,10 @@ class _TarjetaCorrida extends StatelessWidget {
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => abrirDetalleCodificacion(context, c),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,6 +348,7 @@ class _TarjetaCorrida extends StatelessWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

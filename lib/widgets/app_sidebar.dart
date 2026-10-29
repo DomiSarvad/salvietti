@@ -26,6 +26,12 @@ class AppSidebar extends StatelessWidget {
       // Producción cada día (armar/revisar el plan), no algo ocasional.
       _Item('produccion', 'Producción del día', Icons.factory_outlined,
           usuario.puedeVerProduccion),
+      // Informes después de Producción del día (pedido del usuario): es lo que se mira antes de
+      // entrar al trabajo de cada área.
+      _Item('informes', 'Informes', Icons.insights_outlined,
+          usuario.puedeVerModulo(Modulo.informeProduccion)),
+      _Item('informe_gerente', 'Informe de Producción', Icons.summarize_outlined,
+          usuario.puedeVerModulo(Modulo.informeProduccion)),
       // Segundo en uso diario después de Producción del día.
       _Item('jarabes', 'Jarabes', Icons.water_drop_outlined,
           operativo && usuario.puedeVerModulo(Modulo.jarabesProduccion)),
@@ -38,8 +44,6 @@ class AppSidebar extends StatelessWidget {
           operativo && usuario.puedeVerModulo(Modulo.entregas)),
       _Item('compras', 'Pedidos de compra', Icons.shopping_cart_outlined,
           operativo && usuario.puedeVerModulo(Modulo.compras)),
-      _Item('solicitudes', 'Solicitudes', Icons.mark_email_read_outlined,
-          operativo && usuario.puedeVerModulo(Modulo.solicitudes)),
       _Item('soplado', 'Soplado', Icons.air_outlined,
           operativo && usuario.puedeVerModulo(Modulo.soplado)),
       _Item('calidad', 'Control de Calidad', Icons.science_outlined,
@@ -54,15 +58,13 @@ class AppSidebar extends StatelessWidget {
           operativo && usuario.puedeVerModulo(Modulo.mermas)),
       _Item('soda_caustica', 'Soda Cáustica', Icons.science_outlined,
           operativo && usuario.puedeVerModulo(Modulo.sodaCaustica)),
-      // Informes por área (gráficos semanales/mensuales, PDF y Excel).
-      _Item('informes', 'Informes', Icons.insights_outlined,
-          usuario.puedeVerModulo(Modulo.informeProduccion)),
-      _Item('informe_gerente', 'Informe de Producción', Icons.summarize_outlined,
-          usuario.puedeVerModulo(Modulo.informeProduccion)),
       _Item('historial', 'Historial / Bitácora', Icons.history,
           usuario.puedeVerHistorial),
       _Item('usuarios', 'Usuarios', Icons.people_outline,
           usuario.puedeVerUsuarios),
+      // Al final: se abre también desde la campana.
+      _Item('solicitudes', 'Solicitudes', Icons.mark_email_read_outlined,
+          operativo && usuario.puedeVerModulo(Modulo.solicitudes)),
       // Siempre visible, para cualquier rol: es la referencia escrita de
       // cómo funciona cada parte, no algo que dependa de permisos.
       _Item('manual', 'Manual de usuario', Icons.menu_book_outlined, true),

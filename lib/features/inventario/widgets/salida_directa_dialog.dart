@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../utils/notificaciones.dart';
+import '../../../shared/alertas.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../../entregas/models/entregas_modelos.dart' show AreaPedido;
 import '../models/existencia_item.dart';
@@ -53,7 +53,7 @@ class _SalidaDirectaDialogState extends State<SalidaDirectaDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Salida directa registrada.');
+      avisoExito(context, 'Salida directa registrada');
       Navigator.pop(context, true);
     } else {
       setState(() {

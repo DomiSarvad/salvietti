@@ -59,3 +59,13 @@ flutter:
     - .env
     - assets/logo.png
     - assets/videos/login_bg.mp4
+  # Letra incluida en la app: en la web, sin esto Flutter baja Roboto de
+  # fonts.gstatic.com y sin internet no se ve el texto.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700

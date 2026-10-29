@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
@@ -143,24 +144,15 @@ class _VistaState extends State<_Vista> {
           ),
         ],
         const SizedBox(height: 12),
-        _pasoFiltros.envolver(Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Todos'),
-              selected: svc.filtroEstado == null,
-              onSelected: (_) => svc.filtrarEstado(null),
-            ),
-            for (final e in EstadoCompra.values)
-              ChoiceChip(
-                label: Text(e == EstadoCompra.pendiente && svc.pendientes > 0
-                    ? '${e.etiqueta} (${svc.pendientes})'
-                    : e.etiqueta),
-                selected: svc.filtroEstado == e,
-                onSelected: (_) => svc.filtrarEstado(e),
-              ),
-          ],
+        _pasoFiltros.envolver(OpcionesDeslizables<EstadoCompra?>(
+          opciones: [null, ...EstadoCompra.values],
+          seleccionada: svc.filtroEstado,
+          etiqueta: (e) => e == null
+              ? 'Todos'
+              : e == EstadoCompra.pendiente && svc.pendientes > 0
+                  ? '${e.etiqueta} (${svc.pendientes})'
+                  : e.etiqueta,
+          onElegir: svc.filtrarEstado,
         )),
         const SizedBox(height: 12),
       ],

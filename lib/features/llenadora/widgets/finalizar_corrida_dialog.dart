@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/llenadora_modelos.dart';
 import '../services/llenadora_service.dart';
@@ -67,7 +67,7 @@ class _FinalizarCorridaDialogState extends State<FinalizarCorridaDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Corrida finalizada.');
+      avisoExito(context, 'Corrida finalizada');
       Navigator.pop(context, true);
     } else {
       setState(() {

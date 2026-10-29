@@ -24,6 +24,7 @@ class ProductoTerminado {
   final double? botellasPorPaquete;
   final String? preformaId; // null si envase == 'vidrio'
   final String tapaId;
+  final String? fotoUrl; // v46: foto pública del producto (bucket "productos")
 
   ProductoTerminado({
     required this.id,
@@ -34,6 +35,7 @@ class ProductoTerminado {
     this.botellasPorPaquete,
     this.preformaId,
     required this.tapaId,
+    this.fotoUrl,
   });
 
   factory ProductoTerminado.fromMap(Map<String, dynamic> m) => ProductoTerminado(
@@ -45,6 +47,7 @@ class ProductoTerminado {
         botellasPorPaquete: (m['botellas_por_paquete'] as num?)?.toDouble(),
         preformaId: m['preforma_id'],
         tapaId: m['tapa_id'],
+        fotoUrl: m['foto_url'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -55,6 +58,8 @@ class ProductoTerminado {
         'botellas_por_paquete': botellasPorPaquete,
         'preforma_id': preformaId,
         'tapa_id': tapaId,
+        // Solo si hay foto: así guardar sigue andando aunque no se haya corrido v46.
+        if (fotoUrl != null) 'foto_url': fotoUrl,
       };
 }
 

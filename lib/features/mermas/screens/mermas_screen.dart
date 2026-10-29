@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/detalle_merma.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -224,7 +225,10 @@ class _TarjetaEvento extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         side: e.alerta ? const BorderSide(color: Color(0xFFDC2626)) : BorderSide.none,
       ),
-      child: Padding(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => abrirDetalleMerma(context, e),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,6 +260,7 @@ class _TarjetaEvento extends StatelessWidget {
               ),
           ],
         ),
+      ),
       ),
     );
   }

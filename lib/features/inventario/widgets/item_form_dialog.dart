@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
-import '../../../utils/notificaciones.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show Uint8List;
+import '../../../core/constants.dart';
+import '../../../shared/alertas.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/item_inventario.dart';
 import '../models/unidad_medida.dart';
@@ -65,7 +68,25 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
   bool _guardando = false;
   String? _error;
 
+  /// Foto nueva elegida (se sube al guardar).
+  Uint8List? _fotoBytes;
+  String _fotoExt = 'jpg';
+
   bool get _esEdicion => widget.item != null;
+
+  Future<void> _elegirFoto() async {
+    try {
+      final r = await FilePicker.pickFiles(type: FileType.image, withData: true);
+      final a = r?.files.firstOrNull;
+      if (a?.bytes == null) return;
+      setState(() {
+        _fotoBytes = a!.bytes;
+        _fotoExt = (a.extension ?? 'jpg').toLowerCase();
+      });
+    } catch (_) {
+      setState(() => _error = 'No se pudo abrir el selector de fotos.');
+    }
+  }
 
   @override
   void initState() {
@@ -157,16 +178,18 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
       stockMinimo: _num(_minimo),
       consumoDiarioManual: _num(_consumo),
       atributos: atributos,
+      fotoUrl: widget.item?.fotoUrl,
     );
 
     setState(() {
       _guardando = true;
       _error = null;
     });
-    final error = await widget.servicio.guardarItem(item);
+    final error = await widget.servicio
+        .guardarItem(item, foto: _fotoBytes == null ? null : (_fotoBytes!, _fotoExt));
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, _esEdicion ? 'Ítem actualizado.' : 'Ítem creado.');
+      avisoExito(context, _esEdicion ? 'Ítem actualizado' : 'Ítem creado');
       Navigator.pop(context, true);
     } else {
       setState(() {
@@ -218,6 +241,33 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Foto del ítem: tocar para elegir o cambiar.
+          Center(
+            child: InkWell(
+              onTap: _elegirFoto,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 110,
+                height: 110,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: AppColors.primario.withValues(alpha: 0.05),
+                  border: Border.all(color: AppColors.primario.withValues(alpha: 0.5)),
+                ),
+                child: _fotoBytes != null
+                    ? Image.memory(_fotoBytes!, fit: BoxFit.cover)
+                    : widget.item?.fotoUrl != null
+                        ? Image.network(widget.item!.fotoUrl!, fit: BoxFit.cover)
+                        : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            Icon(Icons.add_a_photo_outlined, color: AppColors.primario, size: 28),
+                            SizedBox(height: 4),
+                            Text('Foto', style: TextStyle(fontSize: 12, color: AppColors.primario)),
+                          ]),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _pasoCategoria.envolver(
             DropdownButtonFormField<int>(
               initialValue: hojas.any((h) => h.key == _categoriaId) ? _categoriaId : null,

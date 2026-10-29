@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/detalle_analisis.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -227,7 +228,10 @@ class _TarjetaAnalisis extends StatelessWidget {
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => abrirDetalleAnalisis(context, a),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,6 +281,7 @@ class _TarjetaAnalisis extends StatelessWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../utils/formatters.dart';
-import '../../../utils/notificaciones.dart';
 import '../models/entregas_modelos.dart';
 import '../services/entregas_service.dart';
 
@@ -45,7 +45,7 @@ class _DevolucionDialogState extends State<DevolucionDialog> {
         widget.pedido, widget.linea, t.isEmpty ? null : double.tryParse(t), _motivo.text);
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Devolución registrada.');
+      avisoExito(context, 'Devolución registrada');
       Navigator.pop(context, true);
     } else {
       setState(() {

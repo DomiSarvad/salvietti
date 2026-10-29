@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/pagina_o_dialogo.dart';
 import '../../models/insumo.dart';
 import '../../models/produccion.dart';
 import '../../services/inventario_service.dart';
@@ -29,6 +30,7 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
   List<Insumo> _materiaPrima = [];
   Formula? _formulaSeleccionada;
   final _rendimientoCtrl = TextEditingController(text: '100');
+  final _nombreSaborCtrl = TextEditingController();
   List<_FilaReceta> _filas = [];
   bool _cargando = true;
   bool _cargandoDetalle = false;
@@ -56,6 +58,7 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
     setState(() {
       _formulaSeleccionada = f;
       _rendimientoCtrl.text = f.rendimientoLitros.toStringAsFixed(0);
+      _nombreSaborCtrl.text = f.sabor;
       _cargandoDetalle = true;
       _filas = [];
     });
@@ -91,6 +94,11 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
         'cantidad_por_lote': cantidad,
       });
     }
+    final nombre = _nombreSaborCtrl.text.trim();
+    if (nombre.length < 2) {
+      setState(() => _error = 'Escribí el nombre del sabor.');
+      return;
+    }
     final rendimiento = double.tryParse(_rendimientoCtrl.text);
     if (rendimiento == null || rendimiento <= 0) {
       setState(() => _error = 'El rendimiento (litros por lote) debe ser mayor a 0.');
@@ -103,7 +111,7 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
     try {
       await ProduccionService.guardarFormula(
         formulaId: _formulaSeleccionada!.id,
-        sabor: _formulaSeleccionada!.sabor,
+        sabor: nombre,
         rendimientoLitros: rendimiento,
         detalle: detalle,
       );
@@ -117,12 +125,12 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Editar consumo por producto'),
-      content: SizedBox(
-        width: anchoDialogo(context, 460),
-        height: 480,
-        child: _cargando
+    return DialogoAdaptable(
+      titulo: 'Editar consumo por producto',
+      ancho: anchoDialogo(context, 460),
+      alto: 480,
+      desplazar: false,
+      contenido: _cargando
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,6 +152,11 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
                   ),
                   if (_formulaSeleccionada != null) ...[
                     const SizedBox(height: 8),
+                    TextField(
+                      controller: _nombreSaborCtrl,
+                      maxLength: 60,
+                      decoration: const InputDecoration(labelText: 'Nombre del sabor', counterText: ''),
+                    ),
                     TextField(
                       controller: _rendimientoCtrl,
                       keyboardType: TextInputType.number,
@@ -217,8 +230,7 @@ class _EditarConsumoDialogState extends State<EditarConsumoDialog> {
                   ],
                 ],
               ),
-      ),
-      actions: [
+      acciones: [
         TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar')),

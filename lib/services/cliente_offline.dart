@@ -125,9 +125,14 @@ class ClienteOffline extends http.BaseClient {
   static const _tablasSoloEnLinea = {
     'movimientos', // legacy: tiene su propia cola (HiveService)
     'permisos_rol', // Permisos guarda casilla por casilla y deshace si falla
+    'tours_vistos', // sin red alcanza con lo recordado en la compu
   };
 
-  static const _bucketsSoloEnLinea = {'avatars'}; // AuthService ya la deja pendiente
+  static const _bucketsSoloEnLinea = {
+    'avatars', // AuthService ya la deja pendiente
+    'productos', // la foto de un producto se elige de nuevo si no hay red
+    'items', // ídem, la foto de un ítem del inventario
+  };
 
   // Rutas de Storage que no son subir un archivo.
   static const _rutasStorageNoSubida = {

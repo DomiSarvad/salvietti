@@ -64,8 +64,12 @@ class RecepcionDetalle {
   final String? senasac;
   final String? transportador;
   final double? precioTransporte;
-  final String? fotoUrl; // ruta dentro del bucket privado
+  final String? fotoUrl; // ruta dentro del bucket privado (la única, hasta v46)
+  final List<String> fotosExtra; // v46: todas las rutas
   final String? observaciones;
+
+  /// Todas las fotos (las de antes de v46 tienen solo [fotoUrl]).
+  List<String> get fotos => {if (fotoUrl != null) fotoUrl!, ...fotosExtra}.toList();
 
   const RecepcionDetalle({
     required this.id,
@@ -87,6 +91,7 @@ class RecepcionDetalle {
     this.transportador,
     this.precioTransporte,
     this.fotoUrl,
+    this.fotosExtra = const [],
     this.observaciones,
   });
 
@@ -112,6 +117,7 @@ class RecepcionDetalle {
         transportador: m['transportador'] as String?,
         precioTransporte: (m['precio_transporte'] as num?)?.toDouble(),
         fotoUrl: m['foto_url'] as String?,
+        fotosExtra: [for (final f in (m['fotos'] as List?) ?? const []) f as String],
         observaciones: m['observaciones'] as String?,
       );
 }
@@ -131,7 +137,7 @@ class RecepcionNueva {
   final String? senasac;
   final String? transportador;
   final double? precioTransporte;
-  final String? fotoUrl;
+  final List<String> fotos;
   final String? observaciones;
 
   const RecepcionNueva({
@@ -148,7 +154,7 @@ class RecepcionNueva {
     this.senasac,
     this.transportador,
     this.precioTransporte,
-    this.fotoUrl,
+    this.fotos = const [],
     this.observaciones,
   });
 
@@ -168,7 +174,10 @@ class RecepcionNueva {
         'senasac': senasac,
         'transportador': transportador,
         'precio_transporte': precioTransporte,
-        'foto_url': fotoUrl,
+        'foto_url': fotos.isEmpty ? null : fotos.first,
+        // Solo con más de una: así una recepción con una foto se guarda aunque
+        // todavía no se haya corrido v46.
+        if (fotos.length > 1) 'fotos': fotos,
         'observaciones': observaciones,
       };
 }
@@ -240,7 +249,7 @@ class BorradorRecepcion {
   final String transportador;
   final double? precioTransporte;
   final String observaciones;
-  final FotoAdjunta? foto;
+  final List<FotoAdjunta> fotos;
 
   const BorradorRecepcion({
     required this.almacenId,
@@ -258,6 +267,6 @@ class BorradorRecepcion {
     this.transportador = '',
     this.precioTransporte,
     this.observaciones = '',
-    this.foto,
+    this.fotos = const [],
   });
 }

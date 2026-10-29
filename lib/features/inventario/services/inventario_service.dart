@@ -46,6 +46,11 @@ class InventarioService extends ChangeNotifier {
   Set<int> _relevantes = {};
 
   int? categoriaFiltro;
+
+  /// Tipos elegidos en "Filtrar por tipo" (categorías de primer nivel del
+  /// almacén). Varios a la vez, y se suman al buscador: así sale un reporte
+  /// de, por ejemplo, solo Tapas y Preformas.
+  Set<int> tiposFiltro = {};
   String busqueda = '';
   bool soloPedido = false;
 
@@ -204,6 +209,7 @@ class InventarioService extends ChangeNotifier {
     if (categoriaFiltro != null && !_relevantes.contains(categoriaFiltro)) {
       categoriaFiltro = null;
     }
+    if (otroAlmacen) tiposFiltro = {};
     cargando = false;
     error = null;
     notifyListeners();
@@ -256,6 +262,15 @@ class InventarioService extends ChangeNotifier {
 
   void filtrarCategoria(int? id) {
     categoriaFiltro = id;
+    limiteTabla = filasPorTanda;
+    notifyListeners();
+  }
+
+  /// Las categorías de primer nivel del almacén actual (para "Filtrar por tipo").
+  List<CategoriaInv> get tipos => hijosDe(null);
+
+  void filtrarTipos(Set<int> ids) {
+    tiposFiltro = {...ids};
     limiteTabla = filasPorTanda;
     notifyListeners();
   }
@@ -320,7 +335,11 @@ class InventarioService extends ChangeNotifier {
   /// filtrar (texto, fechas o "Pedido"); en la raíz sin nada de eso se ven
   /// solo las categorías (el reporte, igual, sale con todo el almacén).
   bool get mostrarTabla =>
-      categoriaFiltro != null || busqueda.trim().isNotEmpty || soloPedido || periodoActivo;
+      categoriaFiltro != null ||
+      busqueda.trim().isNotEmpty ||
+      soloPedido ||
+      periodoActivo ||
+      tiposFiltro.isNotEmpty;
 
   List<CategoriaInv> hijosDe(int? padreId) {
     _asegurarIndices();
@@ -396,7 +415,16 @@ class InventarioService extends ChangeNotifier {
   /// que TODAS aparezcan (en cualquier orden, en detalle o código) — así
   /// "tapa negra" encuentra "Tapa Short Negra" aunque no sea ese el orden.
   List<String> get _palabrasBusqueda =>
-      sinTildes(busqueda.trim()).split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      sinTildes(busqueda.trim()).split(RegExp(r'[\s,]+')).where((p) => p.isNotEmpty).toList();
+
+  /// La búsqueda separada por comas es "esto O aquello": "tapa negra, preforma 28"
+  /// trae los dos productos (para sacar un reporte de varios). Dentro de cada
+  /// parte, todas sus palabras tienen que aparecer.
+  List<List<String>> get _gruposBusqueda => [
+        for (final parte in sinTildes(busqueda.trim()).split(','))
+          if (parte.trim().isNotEmpty)
+            parte.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList()
+      ];
 
   /// Si hay algo escrito en el buscador, se busca en TODO el almacén, no
   /// solo dentro de la categoría abierta: no debería hacer falta saber en
@@ -410,22 +438,28 @@ class InventarioService extends ChangeNotifier {
   /// se calcula una sola vez por combinación de filtros.
   List<ExistenciaItem> get visibles {
     _asegurarIndices();
-    final clave = (busqueda.trim(), categoriaFiltro, soloPedido, periodoActivo, identityHashCode(_periodo));
+    final clave = (busqueda.trim(), categoriaFiltro, soloPedido, periodoActivo,
+        identityHashCode(_periodo), Object.hashAllUnordered(tiposFiltro));
     final memo = _visiblesMemo;
     if (memo != null && _visiblesClave == clave) return memo;
 
     final palabras = _palabrasBusqueda;
+    final grupos = _gruposBusqueda;
+    final idsTipos = tiposFiltro.isEmpty
+        ? null
+        : {for (final t in tiposFiltro) ..._idsConDescendientes(t)};
     final ids = (categoriaFiltro != null && palabras.isEmpty)
         ? _idsConDescendientes(categoriaFiltro!)
         : null;
     final resultado = List<ExistenciaItem>.unmodifiable(existencias.where((e) {
       if (ids != null && !ids.contains(e.categoriaId)) return false;
+      if (idsTipos != null && !idsTipos.contains(e.categoriaId)) return false;
       if (soloPedido && !necesitaPedido(e)) return false;
       // Con fechas: solo lo que se movió en ese período.
       if (periodoActivo && _periodo != null && !_periodo!.containsKey(e.itemId)) return false;
       if (palabras.isEmpty) return true;
       final texto = _textoDe(e);
-      return palabras.every(texto.contains);
+      return grupos.any((g) => g.every(texto.contains));
     }));
     _visiblesClave = clave;
     return _visiblesMemo = resultado;
@@ -468,6 +502,8 @@ class InventarioService extends ChangeNotifier {
       titulo: 'Inventario · $almacen',
       filtros: [
         if (categoriaFiltro != null) 'Categoría: ${textoRuta(categoriaFiltro!)}',
+        if (tiposFiltro.isNotEmpty)
+          'Tipos: ${[for (final t in tipos) if (tiposFiltro.contains(t.id)) t.nombre].join(", ")}',
         filtro.describir(),
         if (soloPedido) 'Solo ítems a pedir',
       ].join('   ·   '),
@@ -494,12 +530,25 @@ class InventarioService extends ChangeNotifier {
 
   Future<ItemInventario> cargarItem(int id) => _repo.item(id);
 
-  /// Devuelve null si salió bien, o el mensaje de error.
-  Future<String?> guardarItem(ItemInventario item) async {
+  static const maxFotoItemBytes = 5 * 1024 * 1024;
+
+  /// Devuelve null si salió bien, o el mensaje de error. Con [foto] (bytes y
+  /// extensión), primero la sube y la deja como foto del ítem.
+  Future<String?> guardarItem(ItemInventario item, {(Uint8List, String)? foto}) async {
     final error = _validarItem(item);
     if (error != null) return error;
     final permiso = item.id == null ? puedeCrear : puedeEditar;
     if (!permiso) return 'No tenés permiso para modificar este almacén.';
+    if (foto != null) {
+      if (!['jpg', 'jpeg', 'png', 'webp'].contains(foto.$2)) return 'La foto debe ser JPG, PNG o WEBP.';
+      if (foto.$1.length > maxFotoItemBytes) return 'La foto pesa más de 5 MB.';
+      try {
+        item = item.conFoto(await _repo.subirFotoItem(foto.$1, foto.$2));
+      } catch (e) {
+        if (kDebugMode) debugPrint('InventarioService.subirFotoItem: $e');
+        return 'No se pudo subir la foto. Revisá la conexión (y que esté corrida la migración v48).';
+      }
+    }
     try {
       if (item.id == null) {
         await _repo.crearItem(item);

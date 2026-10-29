@@ -84,6 +84,11 @@ void main() {
     expect(s.porDia.length, 2);
     expect(s.totales.esperadas, 52);
     expect(s.totales.conDesvio, 1);
+    // Total del día 29 (Papaya + Ross): 29 de 34 cajas.
+    final dia29 = s.totalesDe(s.porDia.first.$2);
+    expect(dia29.producidas, 29);
+    expect(dia29.esperadas, 34);
+    expect(dia29.conDesvio, 1);
     s.alternarSoloDesvio();
     expect(s.filtrados.single.sabor, 'Ross');
     s.alternarSoloDesvio();

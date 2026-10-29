@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import '../../../core/constants.dart';
+import '../../../shared/pagina_detalle.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/salidas_modelos.dart';
@@ -64,18 +66,14 @@ class _ReporteDetalleScreenState extends State<ReporteDetalleScreen> {
   }
 
   Future<void> _eliminar(LineaSalidas linea) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Quitar del reporte'),
-        content: Text('¿Quitar "${linea.sabor} · ${linea.presentacion}" de este reporte?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Quitar')),
-        ],
-      ),
+    final ok = await confirmar(
+      context,
+      titulo: '¿Quitar del reporte?',
+      texto: '${linea.sabor} · ${linea.presentacion}',
+      textoSi: 'Sí, quitar',
+      peligro: true,
     );
-    if (ok != true) return;
+    if (!ok) return;
     final error = await widget.servicio.eliminarLinea(linea.id);
     if (!mounted) return;
     if (error == null) {
@@ -87,32 +85,21 @@ class _ReporteDetalleScreenState extends State<ReporteDetalleScreen> {
   }
 
   Future<void> _cerrar() async {
-    final obs = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('Cerrar reporte'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            maxLength: 300,
-            maxLines: 2,
-            decoration: const InputDecoration(labelText: 'Observaciones (opcional)'),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Cerrar reporte')),
-          ],
-        );
-      },
+    final obs = await confirmarConMotivo(
+      context,
+      titulo: '¿Cerrar el reporte?',
+      texto: 'Ya no se podrán agregar ni cambiar sabores.',
+      textoSi: 'Sí, cerrar',
+      etiqueta: 'Observaciones (opcional)',
+      obligatorio: false,
+      peligro: false,
+      tipo: TipoAlerta.pregunta,
     );
     if (obs == null || !mounted) return;
     final error = await widget.servicio.cerrarReporte(_reporte, obs.trim().isEmpty ? null : obs);
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Reporte cerrado.');
+      avisoExito(context, 'Reporte cerrado');
       Navigator.pop(context);
     } else {
       mostrarError(context, error);
@@ -125,23 +112,41 @@ class _ReporteDetalleScreenState extends State<ReporteDetalleScreen> {
     final abierto = r.estado == EstadoReporte.abierto;
     final puedeEditar = widget.servicio.puedeEditar && abierto;
 
+    final total = _lineas.fold<double>(0, (s, l) => s + (l.totalBotellas ?? 0));
+    final colorEstado = abierto ? const Color(0xFFD97706) : const Color(0xFF16A34A);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Reporte · ${r.turno.etiqueta} · ${fmtFecha(r.fecha)}'),
-        actions: [
-          if (puedeEditar)
-            TextButton(
-              onPressed: _cerrar,
-              child: const Text('Cerrar reporte', style: TextStyle(color: Colors.white)),
-            ),
-        ],
-      ),
-      floatingActionButton: puedeEditar
-          ? FloatingActionButton.extended(
-              onPressed: () => _agregarOEditar(),
-              backgroundColor: AppColors.primario,
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar sabor'),
+      backgroundColor: AppColors.fondo,
+      appBar: barraNegra('Reporte de salidas', 'Turno ${r.turno.etiqueta} · ${fmtFecha(r.fecha)}'),
+      // Los botones abajo, a la vista (antes "Cerrar reporte" iba en blanco
+      // sobre una barra clara y no se veía).
+      bottomNavigationBar: puedeEditar
+          ? SafeArea(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Color(0xFFE3E7EB))),
+                ),
+                child: Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _lineas.isEmpty ? null : _cerrar,
+                      icon: const Icon(Icons.lock_outline),
+                      label: const Text('Cerrar reporte'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                      onPressed: () => _agregarOEditar(),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Agregar sabor'),
+                    ),
+                  ),
+                ]),
+              ),
             )
           : null,
       body: _cargando
@@ -155,34 +160,80 @@ class _ReporteDetalleScreenState extends State<ReporteDetalleScreen> {
                   ]),
                 )
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    if (!abierto)
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                            color: const Color(0xFFF5F7FA), borderRadius: BorderRadius.circular(10)),
-                        child: Text(
-                          'Reporte cerrado${r.horaFinDia == null ? '' : ' · ${fmtFechaHora(r.horaFinDia)}'}'
-                          '${r.observaciones == null ? '' : ' · ${r.observaciones}'}',
+                    // Resumen: en qué estado está y cuánto salió en total.
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE3E7EB)),
+                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colorEstado.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(abierto ? 'Abierto' : 'Cerrado',
+                                style: TextStyle(color: colorEstado, fontWeight: FontWeight.w700)),
+                          ),
+                          const Spacer(),
+                          Text('${_lineas.length} sabor${_lineas.length == 1 ? '' : 'es'}',
+                              style: const TextStyle(color: Colors.black54)),
+                        ]),
+                        const SizedBox(height: 12),
+                        const Text('Botellas que salieron en este turno',
+                            style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        Text(fmtNum(total, decimales: 0),
+                            style: const TextStyle(
+                                fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.primario)),
+                        const SizedBox(height: 6),
+                        Text(
+                          [
+                            if (r.responsableNombre != null) r.responsableNombre!,
+                            'Desde ${fmtFechaHora(r.horaInicioDia)}',
+                            if (r.horaFinDia != null) 'hasta ${fmtFechaHora(r.horaFinDia)}',
+                          ].join(' · '),
                           style: const TextStyle(fontSize: 12, color: Colors.black54),
                         ),
-                      ),
+                        if ((r.observaciones ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text('Observaciones: ${r.observaciones}', style: const TextStyle(fontSize: 13)),
+                        ],
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
                     if (_lineas.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(
-                            child: Text('Todavía no se agregó ningún sabor a este reporte.',
-                                style: TextStyle(color: Colors.black54))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Column(children: [
+                          const Icon(Icons.inventory_2_outlined, size: 48, color: Colors.black26),
+                          const SizedBox(height: 8),
+                          Text(
+                            puedeEditar
+                                ? 'Agregá cada sabor que se embotelló en este turno.'
+                                : 'Este reporte no tiene sabores cargados.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ]),
                       )
-                    else
-                      for (final l in _lineas) _TarjetaLinea(
-                        linea: l,
-                        puedeEditar: puedeEditar,
-                        onEditar: () => _agregarOEditar(l),
-                        onEliminar: () => _eliminar(l),
-                      ),
+                    else ...[
+                      const Text('Sabores',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                      const SizedBox(height: 8),
+                      for (final l in _lineas)
+                        _TarjetaLinea(
+                          linea: l,
+                          puedeEditar: puedeEditar,
+                          onEditar: () => _agregarOEditar(l),
+                          onEliminar: () => _eliminar(l),
+                        ),
+                    ],
                   ],
                 ),
     );
@@ -204,56 +255,60 @@ class _TarjetaLinea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = linea;
-    final detalle = l.esPet
-        ? '${fmtNum(l.petPalets ?? 0, decimales: 0)} palets + '
-            '${fmtNum(l.petPaquetesLibres ?? 0, decimales: 0)} paquetes + '
-            '${fmtNum(l.petBotellasLibres ?? 0, decimales: 0)} sueltas'
-        : '${fmtNum(l.vidFilas ?? 0, decimales: 0)} filas + '
-            '${fmtNum(l.vidCajasLibres ?? 0, decimales: 0)} cajas + '
-            '${fmtNum(l.vidBotellasLibres ?? 0, decimales: 0)} sueltas';
+    // Cómo se contó (solo lo que tiene algo): "2 palets · 5 paquetes".
+    String? parte(double? v, String nombre) =>
+        (v ?? 0) > 0 ? '${fmtNum(v, decimales: 0)} $nombre' : null;
+    final conteo = [
+      if (l.esPet) ...[
+        parte(l.petPalets, 'palets'),
+        parte(l.petPaquetesLibres, 'paquetes'),
+        parte(l.petBotellasLibres, 'sueltas'),
+      ] else ...[
+        parte(l.vidFilas, 'filas'),
+        parte(l.vidCajasLibres, 'cajas'),
+        parte(l.vidBotellasLibres, 'sueltas'),
+      ],
+    ].whereType<String>().join(' · ');
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('${l.sabor} · ${l.presentacion}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                ),
-                Text(l.esPet ? 'PET' : 'Vidrio',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(detalle, style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 4),
-            Text(
-              l.totalBotellas == null
-                  ? 'Total: — (falta la equivalencia de esta presentación)'
-                  : 'Total: ${fmtNum(l.totalBotellas, decimales: 0)} botellas',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: l.totalBotellas == null ? Colors.black38 : AppColors.primario),
-            ),
-            if (puedeEditar) ...[
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, children: [
-                OutlinedButton(onPressed: onEditar, child: const Text('Editar')),
-                TextButton(
-                    style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-                    onPressed: onEliminar,
-                    child: const Text('Quitar')),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE3E7EB)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        // Tocar la tarjeta la edita (mientras el reporte está abierto).
+        onTap: puedeEditar ? onEditar : null,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          child: Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(l.sabor, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                Text('${l.presentacion} · ${l.esPet ? 'PET' : 'Vidrio'}',
+                    style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+                if (conteo.isNotEmpty)
+                  Text(conteo, style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
               ]),
-            ],
-          ],
+            ),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(l.totalBotellas == null ? '—' : fmtNum(l.totalBotellas, decimales: 0),
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: l.totalBotellas == null ? Colors.black38 : AppColors.primario)),
+              Text(l.totalBotellas == null ? 'sin equivalencia' : 'botellas',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            ]),
+            if (puedeEditar)
+              IconButton(
+                tooltip: 'Quitar del reporte',
+                icon: const Icon(Icons.delete_outline, color: Color(0xFFDC2626)),
+                onPressed: onEliminar,
+              ),
+          ]),
         ),
       ),
     );

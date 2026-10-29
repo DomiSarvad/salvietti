@@ -14,12 +14,19 @@ enum VistaRecepciones { lista, reclamos }
 /// Reglas de las recepciones de Almacén: qué almacenes ve y en cuáles puede
 /// recibir cada rol, validación del formulario, conversión de unidades,
 /// SENASAG automático y reclamos por diferencia de peso. No conoce widgets.
+/// Campos del formulario de recepción que pueden tener un error.
+enum CampoRecepcion {
+  item, cantidadFactura, cantidadReal, unidad, fecha, fabricacion, vencimiento,
+  precio, factura, lote, transportador, observaciones, senasac, fotos,
+}
+
 class RecepcionesService extends ChangeNotifier {
   RecepcionesService(this._repo, this._usuario, {DateTime Function()? ahora})
       : _ahora = ahora ?? DateTime.now;
 
   static const maxFotoBytes = 5 * 1024 * 1024;
   static const extensionesFoto = ['jpg', 'jpeg', 'png', 'webp'];
+  static const maxFotos = 6;
   static final _formatoSenasac = RegExp(r'^[A-Za-z0-9\-./ ]+$');
 
   final RecepcionesRepository _repo;
@@ -255,6 +262,7 @@ class RecepcionesService extends ChangeNotifier {
 
   /// Valida y guarda. Devuelve null si salió bien, o el mensaje de error.
   Future<String?> guardar(BorradorRecepcion b) async {
+    campoConError = null;
     if (!puedeRecibirEn(b.almacenId)) {
       return 'No tenés permiso para registrar recepciones en este almacén.';
     }
@@ -262,16 +270,16 @@ class RecepcionesService extends ChangeNotifier {
     if (error != null) return error;
 
     final item = b.item!;
-    String? rutaFoto;
+    final rutas = <String>[];
     try {
-      if (b.foto != null) {
-        rutaFoto = await _repo.subirFoto(
-          b.foto!.bytes,
-          ruta: _rutaFoto(b),
-          contentType: b.foto!.extension == 'png'
+      for (final foto in b.fotos) {
+        rutas.add(await _repo.subirFoto(
+          foto.bytes,
+          ruta: _rutaFoto(b, foto),
+          contentType: foto.extension == 'png'
               ? 'image/png'
-              : (b.foto!.extension == 'webp' ? 'image/webp' : 'image/jpeg'),
-        );
+              : (foto.extension == 'webp' ? 'image/webp' : 'image/jpeg'),
+        ));
       }
       String? texto(String t) => t.trim().isEmpty ? null : t.trim();
       await _repo.crearRecepcion(RecepcionNueva(
@@ -288,7 +296,7 @@ class RecepcionesService extends ChangeNotifier {
         senasac: texto(b.senasac),
         transportador: texto(b.transportador),
         precioTransporte: b.precioTransporte,
-        fotoUrl: rutaFoto,
+        fotos: rutas,
         observaciones: texto(b.observaciones),
       ));
       await recargar();
@@ -306,63 +314,73 @@ class RecepcionesService extends ChangeNotifier {
     }
   }
 
-  String _rutaFoto(BorradorRecepcion b) {
+  String _rutaFoto(BorradorRecepcion b, FotoAdjunta foto) {
     final f = b.fecha;
     final mes = '${f.year}-${f.month.toString().padLeft(2, '0')}';
     final azar = Random.secure().nextInt(1 << 31).toRadixString(16);
-    final ext = b.foto!.extension == 'jpeg' ? 'jpg' : b.foto!.extension;
+    final ext = foto.extension == 'jpeg' ? 'jpg' : foto.extension;
     return '${b.almacenId}/$mes/${_ahora().microsecondsSinceEpoch}_$azar.$ext';
   }
 
+  /// El campo del último error de [guardar] (null si no fue de un campo): la
+  /// pantalla lo señala con un globo, como la validación de un navegador.
+  CampoRecepcion? campoConError;
+
+  String _falla(CampoRecepcion campo, String mensaje) {
+    campoConError = campo;
+    return mensaje;
+  }
+
   String? _validar(BorradorRecepcion b) {
+    campoConError = null;
     final item = b.item;
-    if (item == null) return 'Elegí el ítem que llegó.';
-    if (item.almacenId != b.almacenId) return 'Ese ítem no pertenece a este almacén.';
+    if (item == null) return _falla(CampoRecepcion.item, 'Elegí el ítem que llegó.');
+    if (item.almacenId != b.almacenId) return _falla(CampoRecepcion.item, 'Ese ítem no pertenece a este almacén.');
 
     if (b.cantidadFactura == null || b.cantidadFactura! <= 0) {
-      return 'Escribí la cantidad que dice la factura o la etiqueta.';
+      return _falla(CampoRecepcion.cantidadFactura, 'Escribí la cantidad que dice la factura o la etiqueta.');
     }
     if (b.cantidadReal == null || b.cantidadReal! <= 0) {
-      return 'Escribí el peso o la cantidad real que contaste.';
+      return _falla(CampoRecepcion.cantidadReal, 'Escribí el peso o la cantidad real que contaste.');
     }
     final posibles = item.unidad == 'KG'
         ? const ['KG', 'GR']
         : (item.unidad == 'L' ? const ['L', 'ML'] : [item.unidad]);
-    if (!posibles.contains(b.unidadEntrada)) return 'Unidad no válida para este ítem.';
+    if (!posibles.contains(b.unidadEntrada)) return _falla(CampoRecepcion.unidad, 'Unidad no válida para este ítem.');
 
     final hoy = DateTime(_ahora().year, _ahora().month, _ahora().day);
     final fecha = DateTime(b.fecha.year, b.fecha.month, b.fecha.day);
-    if (fecha.isAfter(hoy)) return 'La fecha de recepción no puede ser futura.';
+    if (fecha.isAfter(hoy)) return _falla(CampoRecepcion.fecha, 'La fecha de recepción no puede ser futura.');
 
     final fab = b.fechaFabricacion;
     final ven = b.fechaVencimiento;
-    if (fab != null && fab.isAfter(hoy)) return 'La fecha de fabricación no puede ser futura.';
+    if (fab != null && fab.isAfter(hoy)) return _falla(CampoRecepcion.fabricacion, 'La fecha de fabricación no puede ser futura.');
     if (fab != null && ven != null && !ven.isAfter(fab)) {
-      return 'El vencimiento debe ser posterior a la fabricación.';
+      return _falla(CampoRecepcion.vencimiento, 'El vencimiento debe ser posterior a la fabricación.');
     }
     if (ven != null && ven.isBefore(fecha)) {
-      return 'El producto llegó vencido: revisá la fecha de vencimiento.';
+      return _falla(CampoRecepcion.vencimiento, 'El producto llegó vencido: revisá la fecha de vencimiento.');
     }
 
     if (b.precioTransporte != null && b.precioTransporte! < 0) {
-      return 'El precio del transporte no puede ser negativo.';
+      return _falla(CampoRecepcion.precio, 'El precio del transporte no puede ser negativo.');
     }
-    if (b.nFactura.trim().length > 40) return 'El N° de factura es demasiado largo.';
-    if (b.nLote.trim().length > 40) return 'El N° de lote es demasiado largo.';
-    if (b.transportador.trim().length > 80) return 'El nombre del transportador es demasiado largo.';
-    if (b.observaciones.trim().length > 300) return 'Las observaciones son demasiado largas.';
+    if (b.nFactura.trim().length > 40) return _falla(CampoRecepcion.factura, 'El N° de factura es demasiado largo.');
+    if (b.nLote.trim().length > 40) return _falla(CampoRecepcion.lote, 'El N° de lote es demasiado largo.');
+    if (b.transportador.trim().length > 80) return _falla(CampoRecepcion.transportador, 'El nombre del transportador es demasiado largo.');
+    if (b.observaciones.trim().length > 300) return _falla(CampoRecepcion.observaciones, 'Las observaciones son demasiado largas.');
 
     final senasac = b.senasac.trim();
     if (senasac.length > 40 || (senasac.isNotEmpty && !_formatoSenasac.hasMatch(senasac))) {
-      return 'El código SENASAG solo puede tener letras, números, guiones, puntos y barras.';
+      return _falla(CampoRecepcion.senasac, 'El código SENASAG solo puede tener letras, números, guiones, puntos y barras.');
     }
 
-    final foto = b.foto;
-    if (foto != null) {
+    if (b.fotos.length > maxFotos) return _falla(CampoRecepcion.fotos, 'Se pueden adjuntar hasta $maxFotos fotos.');
+    for (final foto in b.fotos) {
       if (!extensionesFoto.contains(foto.extension)) {
-        return 'La foto debe ser JPG, PNG o WEBP.';
+        return _falla(CampoRecepcion.fotos, 'Las fotos deben ser JPG, PNG o WEBP (${foto.nombre}).');
       }
-      if (foto.bytes.length > maxFotoBytes) return 'La foto pesa más de 5 MB.';
+      if (foto.bytes.length > maxFotoBytes) return _falla(CampoRecepcion.fotos, 'La foto ${foto.nombre} pesa más de 5 MB.');
     }
     return null;
   }

@@ -95,6 +95,9 @@ class RecetaPropuesta {
   final DateTime? aprobadaCalidadEn;
   final String? aprobadaProduccionNombre;
   final DateTime? aprobadaProduccionEn;
+  // Quién la resolvió al final (el Gerente al confirmar, o quien la rechazó).
+  final String? resueltaPorNombre;
+  final DateTime? resueltaEn;
 
   const RecetaPropuesta({
     required this.id,
@@ -109,6 +112,8 @@ class RecetaPropuesta {
     this.aprobadaCalidadEn,
     this.aprobadaProduccionNombre,
     this.aprobadaProduccionEn,
+    this.resueltaPorNombre,
+    this.resueltaEn,
   });
 
   /// El cambio de receta lo aprueban Calidad Y Producción por separado;
@@ -139,6 +144,8 @@ class RecetaPropuesta {
       aprobadaProduccionEn: m['aprobada_produccion_en'] == null
           ? null
           : DateTime.parse(m['aprobada_produccion_en'] as String).toLocal(),
+      resueltaPorNombre: m['aprobada_por_nombre'] as String?,
+      resueltaEn: m['aprobada_en'] == null ? null : DateTime.parse(m['aprobada_en'] as String).toLocal(),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../../core/constants.dart';
+import 'tours_vistos_repository.dart';
 
 /// Un paso de un tour de ayuda: qué parte de la pantalla señalar (con su
 /// [GlobalKey]) y qué explicarle a quien recién entra sobre esa parte.
@@ -47,18 +48,60 @@ class PasoAyuda {
 class TourAyuda {
   static Box get _caja => Hive.box(HiveBoxes.preferencias);
 
+  // Quién tiene la sesión y lo que el servidor dice que ya vio (v45): así el
+  // recorrido sale solo la primera vez que esa persona entra, en cualquier
+  // compu o navegador. Lo de Hive queda como copia para cuando no hay red.
+  static String? _usuarioId;
+  static Set<String> _vistosServidor = {};
+  static ToursVistosRepository? _repo;
+
+  /// Al iniciar sesión con internet: trae del servidor lo que ya vio.
+  static Future<void> cargarDelUsuario(String usuarioId, ToursVistosRepository repo) async {
+    _usuarioId = usuarioId;
+    _repo = repo;
+    try {
+      _vistosServidor = await repo.vistos();
+    } catch (_) {
+      // Sin red o sin v45: queda lo recordado en esta compu.
+      _vistosServidor = {};
+    }
+  }
+
+  /// Al entrar sin internet: solo lo recordado en esta compu.
+  static void usarSinServidor(String usuarioId) {
+    _usuarioId = usuarioId;
+    _repo = null;
+    _vistosServidor = {};
+  }
+
+  static void olvidarUsuario() {
+    _usuarioId = null;
+    _repo = null;
+    _vistosServidor = {};
+  }
+
+  static String _clave(String idTour) => 'tour_${_usuarioId ?? ''}_$idTour';
+
   static bool yaVisto(String idTour) =>
-      (_caja.get('tour_$idTour') as bool?) ?? false;
+      _vistosServidor.contains(idTour) ||
+      ((_caja.get(_clave(idTour)) as bool?) ?? false) ||
+      // Clave de antes (por compu, sin usuario).
+      ((_caja.get('tour_$idTour') as bool?) ?? false);
 
-  static Future<void> _marcarVisto(String idTour) => _caja.put('tour_$idTour', true);
+  static void _marcarVisto(String idTour) {
+    _vistosServidor.add(idTour);
+    _caja.put(_clave(idTour), true);
+    _repo?.marcar(idTour).catchError((_) {});
+  }
 
-  /// Reinicia todos los tours (por si alguien quiere volver a verlos todos
-  /// desde cero) — no se usa todavía en ninguna pantalla, queda disponible.
+  /// Vuelve a mostrar solos todos los recorridos de quien tiene la sesión.
   static Future<void> reiniciarTodos() async {
     final claves = _caja.keys.where((k) => k.toString().startsWith('tour_')).toList();
     for (final k in claves) {
       await _caja.delete(k);
     }
+    _vistosServidor = {};
+    await _repo?.borrarTodos();
   }
 
   /// Muestra el tour. Con [soloSiNoVisto] en true (el auto-arranque al
@@ -78,6 +121,11 @@ class TourAyuda {
     final pasosVisibles =
         pasos.where((p) => p.clave.currentContext != null).toList();
     if (pasosVisibles.isEmpty) return;
+
+    // Se da por visto apenas se muestra, no al terminarlo: si se sale a
+    // otra pantalla (menú, campana, volver) o se cierra la app a la mitad,
+    // `onFinish`/`onSkip` nunca corren y el tour volvía a saltar solo.
+    _marcarVisto(idTour);
 
     final tamanoPantalla = MediaQuery.of(context).size;
 
@@ -144,11 +192,7 @@ class TourAyuda {
           curve: Curves.easeInOut,
         );
       },
-      onFinish: () => _marcarVisto(idTour),
-      onSkip: () {
-        _marcarVisto(idTour);
-        return true;
-      },
+      onSkip: () => true,
     ).show(context: context);
   }
 

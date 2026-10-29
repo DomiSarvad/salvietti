@@ -3,6 +3,7 @@ import 'package:salvietti_control/features/solicitudes/models/solicitud.dart';
 import 'package:salvietti_control/features/solicitudes/repositories/solicitudes_repository.dart';
 import 'package:salvietti_control/features/solicitudes/services/solicitudes_service.dart';
 import 'package:salvietti_control/models/usuario.dart';
+import 'package:salvietti_control/features/jarabes/models/jarabes_modelos.dart';
 
 class _Repo implements SolicitudesRepository {
   List<Solicitud> lista;
@@ -35,6 +36,11 @@ class _Repo implements SolicitudesRepository {
     if (negocio != null) throw negocio!;
     resueltas.add(id);
   }
+
+  List<RecetaPropuesta> recetasFijas = [];
+
+  @override
+  Future<List<RecetaPropuesta>> recetas(DateTime desde) async => recetasFijas;
 }
 
 Usuario _usuario(String rol) =>
@@ -122,6 +128,24 @@ void main() {
 
       final almacen = await _svc('almacen');
       expect(almacen.bandejas, [BandejaSolicitudes.mias]);
+    });
+
+    test('la pestaña Recetas aparece solo con permiso de ver recetas', () async {
+      final repo = _Repo()
+        ..recetasFijas = [
+          RecetaPropuesta(
+              id: 1, saborId: 1, sabor: 'Papaya', estado: EstadoReceta.rechazada,
+              creadaEn: DateTime(2026, 10, 28), motivoRechazo: 'no'),
+        ];
+      final u = Usuario(
+          id: 'u1', nombreCompleto: 'G', rol: 'gerente',
+          permisos: {..._permisosDe('gerente'), 'recetas:ver'});
+      final s = SolicitudesService(repo, u);
+      await s.iniciar();
+      expect(s.bandejas.last, BandejaSolicitudes.recetas);
+      s.elegirBandeja(BandejaSolicitudes.recetas);
+      expect(s.recetasFiltradas.single.sabor, 'Papaya');
+      expect((await _svc('gerente', repo)).bandejas.contains(BandejaSolicitudes.recetas), isFalse);
     });
   });
 

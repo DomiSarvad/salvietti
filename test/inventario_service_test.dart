@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:salvietti_control/features/inventario/models/movimiento_periodo.dart';
@@ -84,6 +85,12 @@ class _RepoFalso implements InventarioRepository {
 
   @override
   Future<void> actualizarItem(ItemInventario item) async {}
+
+  String? fotoSubida;
+
+  @override
+  Future<String> subirFotoItem(Uint8List bytes, String extension) async =>
+      fotoSubida = 'https://x/items/1.$extension';
 
   @override
   Future<void> desactivarItem(int id) async {}
@@ -221,6 +228,25 @@ void main() {
     expect(s.visibles.map((e) => e.itemId), [11, 12]);
   });
 
+  test('con comas trae varios productos a la vez (para un reporte de varios)', () async {
+    final s = await _servicio(_todoGeneral);
+    s.buscar('capsula negra, escoba');
+    expect(s.visibles.map((e) => e.itemId), [10, 12]);
+  });
+
+  test('el filtro por tipos admite varios y se suma al buscador', () async {
+    final s = await _servicio(_todoGeneral);
+    expect(s.tipos.map((t) => t.nombre), containsAll(['PET', 'Limpieza']));
+    s.filtrarTipos({4}); // Limpieza
+    expect(s.mostrarTabla, isTrue);
+    expect(s.visibles.map((e) => e.itemId), [11, 12]);
+    s.filtrarTipos({1, 4}); // PET + Limpieza
+    expect(s.visibles.map((e) => e.itemId), [10, 11, 12]);
+    s.buscar('escoba');
+    expect(s.visibles.map((e) => e.itemId), [12]);
+    expect(s.reporte().filtros, contains('Tipos: '));
+  });
+
   test('marca "Pedido" cuando el stock llega al mínimo', () async {
     final s = await _servicio(_todoGeneral);
     s.alternarSoloPedido();
@@ -270,6 +296,19 @@ void main() {
             unidadCompra: 'quintal', factorCompra: 46)),
         isNull);
     expect(repo.creados, hasLength(1));
+
+    // Con foto: se sube primero y el ítem queda con su dirección.
+    expect(
+        await s.guardarItem(
+            const ItemInventario(categoriaId: 3, detalle: 'Tapa roja', unidad: 'UNI'),
+            foto: (Uint8List(10), 'png')),
+        isNull);
+    expect(repo.creados.last.fotoUrl, repo.fotoSubida);
+    expect(
+        await s.guardarItem(
+            const ItemInventario(categoriaId: 3, detalle: 'Tapa roja', unidad: 'UNI'),
+            foto: (Uint8List(10), 'pdf')),
+        contains('JPG'));
 
     expect(await s.registrarConteo(s.existencias.first, cantidadReal: -1), isNotNull);
     expect(await s.registrarConteo(s.existencias.first, cantidadReal: 95), isNull);

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
 import '../models/produccion.dart';
 import 'supabase_service.dart';
 import 'bitacora_service.dart';
@@ -80,6 +82,26 @@ class ProduccionService {
     await SupabaseService.client
         .from('productos_terminados')
         .insert(producto.toMap());
+  }
+
+  /// Cambia nombre, materiales, litros o foto de un producto ya creado.
+  static Future<void> actualizarProductoTerminado(ProductoTerminado producto) async {
+    await SupabaseService.client
+        .from('productos_terminados')
+        .update(producto.toMap())
+        .eq('id', producto.id)
+        .timeout(SupabaseService.timeoutRed);
+  }
+
+  /// Sube la foto de un producto (bucket público "productos", v46) y
+  /// devuelve su dirección. Necesita internet: no va a la cola.
+  static Future<String> subirFotoProducto(Uint8List bytes, String extension) async {
+    final ext = extension == 'jpeg' ? 'jpg' : extension;
+    final ruta = '${DateTime.now().microsecondsSinceEpoch}.$ext';
+    final storage = SupabaseService.client.storage.from('productos');
+    await storage.uploadBinary(ruta, bytes,
+        fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'));
+    return storage.getPublicUrl(ruta);
   }
 
   /// Agrega un producto terminado (sabor + tamaño + envase) con sus

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -124,20 +125,11 @@ class _VistaState extends State<_Vista> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _pasoBandejas.envolver(
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final b in BandejaPedidos.values)
-                  ChoiceChip(
-                    label: Text('${b.etiqueta} (${svc.cantidadEn(b)})'),
-                    selected: svc.bandeja == b,
-                    selectedColor: AppColors.primario,
-                    labelStyle: TextStyle(
-                        color: svc.bandeja == b ? Colors.white : Colors.black87),
-                    onSelected: (_) => svc.elegirBandeja(b),
-                  ),
-              ],
+            OpcionesDeslizables<BandejaPedidos>(
+              opciones: BandejaPedidos.values,
+              seleccionada: svc.bandeja,
+              etiqueta: (b) => '${b.etiqueta} (${svc.cantidadEn(b)})',
+              onElegir: svc.elegirBandeja,
             ),
           ),
         ),

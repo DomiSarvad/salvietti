@@ -106,8 +106,12 @@ class InformeService extends ChangeNotifier {
   /// Suma de lo que se ve en la lista, pero solo de las filas que se pueden
   /// comparar (tienen esperado Y producido): un día con la producción todavía
   /// sin cargar sumaba lo esperado contra 0 y deformaba la desviación total.
-  TotalesInforme get totales {
-    final fs = filtrados
+  TotalesInforme get totales => totalesDe(filtrados);
+
+  /// Lo mismo que [totales] pero de un grupo de filas (ej. los sabores de un
+  /// día, para el resumen de ese día en su tarjeta).
+  TotalesInforme totalesDe(List<ResumenProduccion> filas) {
+    final fs = filas
         .where((r) => (r.cajasEsperadas ?? 0) > 0 && r.cajasProducidas != null)
         .toList();
     final dias = [for (final r in fs) DateTime(r.fecha.year, r.fecha.month, r.fecha.day)]..sort();
@@ -117,7 +121,7 @@ class InformeService extends ChangeNotifier {
       hasta: dias.isEmpty ? null : dias.last,
       esperadas: fs.fold(0.0, (s, r) => s + r.cajasEsperadas!),
       producidas: fs.fold(0.0, (s, r) => s + r.cajasProducidas!),
-      conDesvio: filtrados.where((r) => r.alertaDesviacion).length,
+      conDesvio: filas.where((r) => r.alertaDesviacion).length,
     );
   }
 

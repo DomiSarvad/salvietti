@@ -161,6 +161,19 @@ recetas del Gerente igual (`_verificar_clave_actual`). v44 les agrega `extension
 ... set search_path` (v16/v37 también corregidos). Toda función nueva que use `crypt`/`gen_salt` lleva
 `extensions` en su search_path.
 
+→ v45 (recorridos vistos por usuario): `tours_vistos` (usuario_id, id_tour), cada uno ve/escribe/borra
+solo lo suyo. Ver "Ayuda dentro de la app".
+
+→ v46 (fotos): varias fotos por recepción (`inv_recepciones.fotos`, vista `inv_recepciones_detalle` con
+`fotos` al final) y foto de cada producto terminado (`productos_terminados.foto_url`, bucket `productos`).
+→ v47 (perfil propio): vuelve a dejar que cada usuario edite SU fila de `usuarios` (foto, nombre). schema.sql y
+v3 la dejan solo para el Gerente y Supabase no da error (el update no toca filas): la foto "se guardaba" y
+desaparecía. Después de correr schema.sql o v3, correr v47. `actualizarPerfil` ahora pide la fila de vuelta
+(`.select`) y avisa si vino vacía.
+→ v48: el rol Almacén VE el almacén de Soda Cáustica (recibe la soda y se la entrega al área, pero no tenía
+permiso de verlo: faltaba en Inicio y Almacenes), y foto de cada ítem (`inv_items.foto_url`, bucket público
+`items`, solo en línea; `InventarioService.guardarItem(item, foto: (bytes, ext))`).
+
 ### Gerente: Informes, campana y menú (2026-10-23)
 
 - **Menú**: `Rol.soloInformes` (`{gerente}`) + `Usuario.soloInformes`: el sidebar oculta las pantallas
@@ -224,7 +237,8 @@ recetas del Gerente igual (`_verificar_clave_actual`). v44 les agrega `extension
 - `InformeService`: `filtro` (BarraFiltros: sabor + Desde/Hasta), `soloDesvio`, `filtrados`, `porDia`
   y `totales` (cajas esperadas/producidas, desviación total, cuántos con desvío > 3 %).
 - Pantalla: totales arriba, filtros, lista agrupada por día ("Hoy", "Ayer", fecha) con barra de
-  avance producido/esperado; tocar abre `_Detalle` a pantalla completa (desviación grande con su
+  avance producido/esperado (un día con 2+ sabores lleva arriba "Total del día", `_ResumenDia` con
+  `InformeService.totalesDe`; con uno solo no, repetiría la fila); tocar abre `_Detalle` a pantalla completa (desviación grande con su
   explicación, preparados/esperado/producido, aviso de datos incompletos, merma por área con barras
   y motivo). El `PasoAyuda` envuelve solo los totales: antes envolvía la lista y mantener apretada
   una fila mostraba el globo encima de los datos.
@@ -233,7 +247,56 @@ recetas del Gerente igual (`_verificar_clave_actual`). v44 les agrega `extension
   compu. Lo usan Mi perfil (`PerfilDialog(comoPantalla:)`) y el alta/edición de Usuarios
   (`UsuarioFormDialog(comoPagina:)`); en modo página `DialogBanner` va sin X (`onCerrar: null`). Las
   pantallas de detalle propias (Informe de Producción, conversación de Solicitudes) usan la misma barra
-  negra. Un formulario grande nuevo, igual.
+  negra. Un formulario grande nuevo, igual. `ModalFormulario` (el marco de ~24 formularios) hace lo
+  mismo solo: < 600 px se dibuja como `Dialog.fullscreen` con barra negra, flecha de volver y el botón abajo. Para los `AlertDialog` existentes: `DialogoAdaptable`
+  (mismo archivo; ventana o página según la ruta donde esté) + `abrirAdaptable`. Usado en Producción
+  del día (Armar plan, Productos, Nuevo producto, Editar consumo). Se sacó "Copiar resumen" (repetía
+  "Compartir" en texto).
+- **Selectores y detalles comunes** (2026-10-28, pedido del usuario): `OpcionesDeslizables`
+  (`lib/shared/opciones_deslizables.dart`, una fila que se desliza de costado; + `iconoAlmacen`) en
+  vez de `Wrap` de chips o `SegmentedButton` para elegir almacén/bandeja/estado (Almacenes,
+  Recepciones, Entregas, Solicitudes, Pedidos de compra). `PaginaDetalle`/`SeccionDetalle`/`barraNegra`
+  (`lib/shared/pagina_detalle.dart`): tocar una tarjeta de historial abre su detalle con barra negra
+  (Recepciones, Jarabes —con los demás preparados del día—, Soplado, Llenadora, Codificación,
+  Calidad, Mermas, Soda Cáustica; `widgets/detalle_*.dart` de cada módulo). Una lista nueva, igual.
+  "Reclamos del mes" de Recepciones pasó a llamarse "Faltantes del mes". Informes e Informe de
+  Producción van arriba en el menú (después de Inicio). El reporte de Registro de salidas se rehízo
+  (barra negra, total del turno arriba, botones Cerrar/Agregar abajo: antes "Cerrar reporte" era
+  texto blanco sobre barra clara, invisible).
+- **Historial de recetas en Solicitudes** (2026-10-29): al aprobarse/rechazarse una propuesta de
+  receta desaparecía sin rastro. Pestaña "Recetas" de Solicitudes (`BandejaSolicitudes.recetas`, con
+  permiso `recetas:ver`): `SolicitudesRepository.recetas` lee `jarabes_recetas` (90 días, cualquier
+  estado) con el modelo `RecetaPropuesta` de Jarabes; `ListaRecetas` + detalle (vistos buenos, quién
+  la resolvió = `aprobada_por_nombre/_en`, motivo, insumos). Se aprueban igual en Jarabes. (Un primer
+  intento la ponía en Jarabes y le mostraba "Jarabes" al Gerente; se deshizo.)
+- **Menú** (2026-10-29): Inicio, Producción del día, Informes, Informe de Producción, Jarabes… y
+  Solicitudes al final, antes del Manual (se abre también desde la campana).
+- **Almacenes: filtro por tipo + varios productos** (2026-10-29): "Tipo" (`tiposFiltro`, varias
+  categorías de primer nivel a la vez, hoja con casillas) se suma al buscador y al reporte; en el
+  buscador la coma es "o" (`_gruposBusqueda`: "tapa negra, preforma 28" trae los dos).
+- **Fotos** (v46, 2026-10-29): Recepciones admite hasta 6 (`inv_recepciones.fotos text[]`; `foto_url`
+  queda con la primera, y `fotos` solo se manda con 2+ para que una sola foto ande sin v46;
+  `RecepcionDetalle.fotos` junta las dos). Productos del catálogo de Producción: foto
+  (`productos_terminados.foto_url`, bucket público `productos`, solo en línea), y tocar un producto
+  abre la misma ficha para editar nombre, materiales, litros y foto, con su "Consumo por botella"
+  (receta del sabor ÷ rendimiento × litros, + preforma y tapa). "Editar consumo" deja renombrar el sabor.
+- **Avisos al estilo del ejemplo del usuario** (2026-10-29, `lib/shared/alertas.dart`): `confirmar`
+  (ícono "!" o "?" en un círculo, título grande, Cancelar gris + Sí, rojo si `peligro`),
+  `confirmarConMotivo` (lo mismo con un texto: anular, cerrar reporte) y `avisoExito` (✓ verde que se
+  cierra solo; se puede llamar justo antes de `Navigator.pop` del formulario: aparece después, sobre
+  la pantalla). Todos los formularios de registro usan `avisoExito` en vez del toast; anular
+  corrida/preparado, eliminar ítem, quitar/cerrar reporte usan `confirmar*`. Un formulario o
+  confirmación nueva, igual.
+- **Globo en el campo que falta** (`lib/shared/aviso_campo.dart`, `avisarCampo(clave, mensaje)`): trae
+  el campo a la vista y muestra debajo un globo con "!" naranja 3 s, como la validación del navegador.
+  Puesto en Recepciones: `RecepcionesService.campoConError` (`CampoRecepcion`) dice qué campo falló y
+  el formulario tiene una `GlobalKey` por campo; los errores que no son de un campo van abajo como
+  antes. Para otro formulario: el service anota el campo, la pantalla envuelve cada campo.
+  Fotos de Recepciones como casilleros "Foto 1, Foto 2…" con vista previa (formulario y detalle; en
+  el detalle, tocar amplía con `mostrarFotoAmpliada`).
+- **Foto de perfil perdida** (2026-10-29): `PerfilDialog` mandaba a la cola local CUALQUIER error de
+  subida (no solo falta de red): se veía desde ese navegador, nunca llegaba al servidor y se perdía al
+  borrarse sus datos. Ahora solo `ClienteOffline.esFallaDeRed` va a la cola; otro error se muestra.
 
 ### Solicitudes como mensajería (2026-10-25)
 
@@ -645,6 +708,11 @@ sin tocar ningún repositorio: `ClienteOffline` (`lib/services/cliente_offline.d
   funcionando). Una RPC nueva de solo lectura hay que sumarla a `_rpcLectura`, y una que deba exigir
   conexión a `_rpcSoloEnLinea` — si no, se trata como escritura y se encola.
 - Test: `test/cliente_offline_test.dart` (cliente HTTP falso, sin red real).
+- **Web sin internet = ventana en blanco (2026-10-28)**: Flutter web bajaba CanvasKit de gstatic.com y
+  la letra Roboto de fonts.gstatic.com. Ahora `web/flutter_bootstrap.js` fija `canvasKitBaseUrl:
+  "canvaskit/"` (se sirve desde la app) y Roboto va en `assets/fonts` (`fontFamily: 'Roboto'` en el
+  tema). Nada que cargue al arrancar puede depender de un CDN. Una URL publicada igual necesita red
+  para bajar la página (no hay service worker); sin red funciona la app instalada o servida local.
 - **Arreglos de la revisión del modo sin internet (2026-10-23)**:
   1. *Doble registro con wifi sin salida*: los repositorios cortan a los 8 s (`timeoutRed`) pero el
      pedido seguía y, al fallar tarde, se encolaba igual — la persona veía error, reintentaba, y se
@@ -753,6 +821,13 @@ que repite el tour a pedido). Qué tour ya se vio se guarda en Hive (`HiveBoxes.
 nueva) **por dispositivo, no por usuario** — a propósito, porque en la fábrica suele ser la misma
 computadora para varios turnos/roles. `TourAyuda.mostrar` descarta solo los pasos cuyo `GlobalKey`
 no está montado en ese momento (ej. una tarjeta que ese rol no ve), en vez de romper.
+Un tour se marca visto APENAS se muestra (no al terminarlo): antes solo se marcaba con
+"Siguiente" hasta el final o "Saltar", y salir a otra pantalla a la mitad lo hacía saltar de nuevo.
+**Desde v45 se recuerda POR USUARIO en el servidor** (`tours_vistos`, `ToursVistosRepository`): solo en
+Hive volvía a salir en cada ingreso si el navegador borraba sus datos (`flutter run -d chrome` abre un
+perfil nuevo). `AuthService._cargarPerfil` espera `TourAyuda.cargarDelUsuario` antes de mostrar el menú;
+sin red, `usarSinServidor` (Hive, clave `tour_<usuario>_<id>`); `cerrarSesion` → `olvidarUsuario`.
+`tours_vistos` está en `_tablasSoloEnLinea` (no se encola). Test: `test/tour_ayuda_test.dart`.
 
 **Textos de los recorridos: una línea, lo mínimo** (pedido del usuario, 2026-10-25; se acortaron
 los 51). Un paso nuevo va igual de corto. Si una pantalla la usan roles que hacen cosas distintas,

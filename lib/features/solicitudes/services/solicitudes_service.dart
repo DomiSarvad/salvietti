@@ -3,6 +3,7 @@ import '../../../shared/busqueda_local.dart';
 import '../../../core/modulos.dart';
 import '../../../models/usuario.dart';
 import '../models/solicitud.dart';
+import '../../jarabes/models/jarabes_modelos.dart' show RecetaPropuesta;
 import '../repositories/solicitudes_repository.dart';
 import '../../../shared/filtros/filtro_lista.dart';
 import '../../../shared/reportes/reporte_tabla.dart';
@@ -10,7 +11,8 @@ import '../../../shared/reportes/reporte_tabla.dart';
 enum BandejaSolicitudes {
   mias('Mis solicitudes'),
   porAprobar('Por aprobar'),
-  resueltas('Resueltas');
+  resueltas('Resueltas'),
+  recetas('Recetas');
 
   final String etiqueta;
   const BandejaSolicitudes(this.etiqueta);
@@ -25,6 +27,11 @@ class SolicitudesService extends ChangeNotifier {
   final Usuario _usuario;
 
   List<Solicitud> solicitudes = [];
+
+  /// Propuestas de receta de los últimos [diasRecetas] días (pendientes y
+  /// resueltas): se aprueban en Jarabes, pero su historial se ve acá.
+  List<RecetaPropuesta> recetas = [];
+  static const diasRecetas = 90;
   BandejaSolicitudes bandeja = BandejaSolicitudes.mias;
   bool cargando = true;
   String? error;
@@ -35,6 +42,7 @@ class SolicitudesService extends ChangeNotifier {
   bool get puedeVer => _puede(Modulo.solicitudes, Accion.ver);
   bool get puedeCrear => _puede(Modulo.solicitudes, Accion.crear);
   bool get puedeAprobar => _puede(Modulo.aprobaciones, Accion.aprobar);
+  bool get puedeVerRecetas => _puede(Modulo.recetas, Accion.ver);
 
   /// Las pestañas que tienen sentido para este rol: quien pide ve las suyas;
   /// quien aprueba (el Gerente) ve lo que espera respuesta y lo resuelto. Al
@@ -42,6 +50,7 @@ class SolicitudesService extends ChangeNotifier {
   List<BandejaSolicitudes> get bandejas => [
         if (puedeCrear || !puedeAprobar) BandejaSolicitudes.mias,
         if (puedeAprobar) ...[BandejaSolicitudes.porAprobar, BandejaSolicitudes.resueltas],
+        if (puedeVerRecetas) BandejaSolicitudes.recetas,
       ];
 
   /// La constancia es el comprobante de lo que resolvió Gerencia (aprobada o
@@ -57,6 +66,7 @@ class SolicitudesService extends ChangeNotifier {
     cargando = true;
     error = null;
     bandeja = puedeAprobar ? BandejaSolicitudes.porAprobar : BandejaSolicitudes.mias;
+    if (!bandejas.contains(bandeja) && bandejas.isNotEmpty) bandeja = bandejas.first;
     notifyListeners();
     if (!puedeVer) {
       cargando = false;
@@ -68,7 +78,16 @@ class SolicitudesService extends ChangeNotifier {
 
   Future<void> recargar() async {
     try {
-      solicitudes = await _repo.solicitudes();
+      final r = await Future.wait<Object>([
+        _repo.solicitudes(),
+        puedeVerRecetas
+            ? _repo.recetas(DateTime.now().subtract(const Duration(days: diasRecetas)))
+                // Sin la tabla de Jarabes (o sin permiso) las solicitudes se ven igual.
+                .catchError((_) => <RecetaPropuesta>[])
+            : Future.value(<RecetaPropuesta>[]),
+      ]);
+      solicitudes = r[0] as List<Solicitud>;
+      recetas = r[1] as List<RecetaPropuesta>;
       error = null;
     } catch (e) {
       error = 'No se pudieron cargar las solicitudes. Revisá la conexión o que '
@@ -102,6 +121,8 @@ class SolicitudesService extends ChangeNotifier {
         return solicitudes.where((s) => s.estado == EstadoSolicitud.pendiente).toList();
       case BandejaSolicitudes.resueltas:
         return solicitudes.where((s) => s.estado != EstadoSolicitud.pendiente).toList();
+      case BandejaSolicitudes.recetas:
+        return const []; // esta pestaña muestra [recetasFiltradas]
     }
   }
 
@@ -176,11 +197,25 @@ class SolicitudesService extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<RecetaPropuesta> get recetasFiltradas => filtro.aplicar(recetas,
+      texto: (r) => <String?>[r.sabor, r.creadaPorNombre, r.estado.etiqueta, r.resueltaPorNombre, r.motivoRechazo, r.aprobadaCalidadNombre, r.aprobadaProduccionNombre].whereType<String>().join(' '),
+      fecha: (r) => r.creadaEn);
+
   List<Solicitud> get visiblesFiltrados => filtro.aplicar(visibles,
       texto: (x) => <String?>[TipoSolicitud.etiqueta(x.tipo), x.asunto, x.detalle, x.itemDetalle, x.solicitanteNombre, x.respuesta, x.estado.etiqueta].whereType<String>().join(' '),
       fecha: (x) => x.fecha);
 
-  ReporteTabla reporte() => ReporteTabla(
+  ReporteTabla reporte() => bandeja == BandejaSolicitudes.recetas
+      ? ReporteTabla(
+          titulo: 'Propuestas de receta',
+          filtros: filtro.describir(),
+          columnas: const ['Fecha', 'Sabor', 'Propuesta por', 'Estado', 'Resuelta por', 'Motivo'],
+          filas: [
+            for (final r in recetasFiltradas)
+              [r.creadaEn, r.sabor, r.creadaPorNombre, r.estado.etiqueta, r.resueltaPorNombre, r.motivoRechazo]
+          ],
+        )
+      : ReporteTabla(
         titulo: 'Solicitudes a Gerencia',
         filtros: filtro.describir(),
         columnas: const ['Fecha', 'Tipo', 'Asunto', 'Ítem', 'Cantidad', 'Solicitante', 'Estado', 'Respuesta'],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/alertas.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
@@ -39,7 +40,7 @@ class _Vista extends StatelessWidget {
     final error = await svc.guardar(nota: nota);
     if (!context.mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Balance registrado.');
+      avisoExito(context, 'Balance registrado');
       Navigator.pop(context, true);
     } else {
       mostrarError(context, error);

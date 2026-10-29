@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -51,7 +52,7 @@ class _VistaState extends State<_Vista> {
   );
   final _pasoVista = PasoAyuda(
     clave: GlobalKey(),
-    titulo: 'Recepciones / Reclamos del mes',
+    titulo: 'Recepciones / Faltantes del mes',
     texto: 'Lo que llegó, y lo que faltó por proveedor.',
   );
   final _pasoBuscador = PasoAyuda(
@@ -169,36 +170,23 @@ class _Cabecera extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           pasoAlmacenChips.envolver(
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final a in svc.almacenes)
-                  ChoiceChip(
-                    label: Text(a.nombre),
-                    selected: a.id == svc.almacenId,
-                    selectedColor: AppColors.primario,
-                    labelStyle: TextStyle(
-                        color: a.id == svc.almacenId ? Colors.white : Colors.black87),
-                    onSelected: (_) => svc.seleccionarAlmacen(a.id),
-                  ),
-              ],
+            OpcionesDeslizables<String?>(
+              opciones: [for (final a in svc.almacenes) a.id],
+              seleccionada: svc.almacenId,
+              etiqueta: (id) => svc.almacenes.firstWhere((a) => a.id == id).nombre,
+              icono: (id) => iconoAlmacen(svc.almacenes.firstWhere((a) => a.id == id).nombre),
+              onElegir: (id) => svc.seleccionarAlmacen(id!),
             ),
           ),
           const SizedBox(height: 10),
-          pasoVista.envolver(SegmentedButton<VistaRecepciones>(
-            segments: const [
-              ButtonSegment(
-                  value: VistaRecepciones.lista,
-                  icon: Icon(Icons.list_alt),
-                  label: Text('Recepciones')),
-              ButtonSegment(
-                  value: VistaRecepciones.reclamos,
-                  icon: Icon(Icons.report_gmailerrorred_outlined),
-                  label: Text('Reclamos del mes')),
-            ],
-            selected: {svc.vista},
-            onSelectionChanged: (s) => svc.cambiarVista(s.first),
+          pasoVista.envolver(OpcionesDeslizables<VistaRecepciones>(
+            opciones: VistaRecepciones.values,
+            seleccionada: svc.vista,
+            etiqueta: (v) => v == VistaRecepciones.lista ? 'Recepciones' : 'Faltantes del mes',
+            icono: (v) => v == VistaRecepciones.lista
+                ? Icons.list_alt
+                : Icons.report_gmailerrorred_outlined,
+            onElegir: svc.cambiarVista,
           )),
           if (svc.vista == VistaRecepciones.lista) ...[
             const SizedBox(height: 10),
@@ -277,10 +265,7 @@ class _Tarjeta extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => showDialog(
-          context: context,
-          builder: (_) => RecepcionDetalleDialog(servicio: svc, r: r),
-        ),
+        onTap: () => RecepcionDetalleDialog.abrir(context, svc, r),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -325,8 +310,9 @@ class _Tarjeta extends StatelessWidget {
                       diasParaVencer < 30 ? const Color(0xFFDC2626) : const Color(0xFFD97706),
                       icono: Icons.event_busy_outlined,
                     ),
-                  if (r.fotoUrl != null)
-                    _pill('Con foto', Colors.black54, icono: Icons.photo_outlined),
+                  if (r.fotos.isNotEmpty)
+                    _pill(r.fotos.length == 1 ? '1 foto' : '${r.fotos.length} fotos', Colors.black54,
+                        icono: Icons.photo_outlined),
                 ],
               ),
             ],
@@ -337,7 +323,7 @@ class _Tarjeta extends StatelessWidget {
   }
 }
 
-/// Reclamos del mes: lo que faltó por proveedor e ítem.
+/// Faltantes del mes (antes "Reclamos del mes"): lo que faltó por proveedor e ítem.
 class _Reclamos extends StatelessWidget {
   final RecepcionesService svc;
   const _Reclamos({required this.svc});

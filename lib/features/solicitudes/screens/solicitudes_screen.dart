@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
@@ -6,6 +7,7 @@ import '../../../services/auth_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
 import '../repositories/solicitudes_repository.dart';
 import '../services/solicitudes_service.dart';
+import '../widgets/lista_recetas.dart';
 import '../widgets/conversacion_solicitud.dart';
 import '../widgets/solicitud_form_dialog.dart';
 import '../../../shared/filtros/barra_filtros.dart';
@@ -121,21 +123,13 @@ class _VistaState extends State<_Vista> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _pasoBandejas.envolver(
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final b in svc.bandejas)
-                  ChoiceChip(
-                      label: Text(b == BandejaSolicitudes.porAprobar && svc.pendientesDeAprobar > 0
-                          ? '${b.etiqueta} (${svc.pendientesDeAprobar})'
-                          : b.etiqueta),
-                      selected: svc.bandeja == b,
-                      selectedColor: AppColors.primario,
-                      labelStyle:
-                          TextStyle(color: svc.bandeja == b ? Colors.white : Colors.black87),
-                      onSelected: (_) => svc.elegirBandeja(b),
-                    ),
-              ],
+            OpcionesDeslizables<BandejaSolicitudes>(
+              opciones: svc.bandejas,
+              seleccionada: svc.bandeja,
+              etiqueta: (b) => b == BandejaSolicitudes.porAprobar && svc.pendientesDeAprobar > 0
+                  ? '${b.etiqueta} (${svc.pendientesDeAprobar})'
+                  : b.etiqueta,
+              onElegir: svc.elegirBandeja,
             ),
           ),
         ),
@@ -150,6 +144,9 @@ class _VistaState extends State<_Vista> {
             hint: 'Buscar por asunto, ítem, solicitante, tipo…',
           ),
         ),
+        if (svc.bandeja == BandejaSolicitudes.recetas)
+          Expanded(child: ListaRecetas(recetas: svc.recetasFiltradas, filtrando: svc.filtro.activo))
+        else
         Expanded(
           child: items.isEmpty
               ? (svc.filtro.activo

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../utils/notificaciones.dart';
+import '../../../shared/alertas.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/mermas_modelos.dart';
 import '../services/mermas_service.dart';
@@ -77,7 +77,7 @@ class _RegistrarMermaDialogState extends State<RegistrarMermaDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Merma registrada.');
+      avisoExito(context, 'Merma registrada');
       Navigator.pop(context, true);
     } else {
       setState(() {

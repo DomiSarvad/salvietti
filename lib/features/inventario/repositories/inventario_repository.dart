@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/supabase_service.dart';
 import '../models/almacen.dart';
@@ -23,6 +24,9 @@ abstract class InventarioRepository {
   Future<ItemInventario> item(int id);
   Future<void> crearItem(ItemInventario item);
   Future<void> actualizarItem(ItemInventario item);
+
+  /// Sube la foto de un ítem (bucket público "items") y devuelve su dirección.
+  Future<String> subirFotoItem(Uint8List bytes, String extension);
   Future<void> desactivarItem(int id);
   Future<void> registrarConteo({
     required int itemId,
@@ -154,6 +158,18 @@ class SupabaseInventarioRepository implements InventarioRepository {
         .update(item.toMap())
         .eq('id', item.id!)
         .timeout(SupabaseService.timeoutRed);
+  }
+
+  @override
+  Future<String> subirFotoItem(Uint8List bytes, String extension) async {
+    final ext = extension == 'jpeg' ? 'jpg' : extension;
+    final ruta = '${DateTime.now().microsecondsSinceEpoch}.$ext';
+    final storage = _db.storage.from('items');
+    await storage
+        .uploadBinary(ruta, bytes,
+            fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'))
+        .timeout(const Duration(seconds: 30));
+    return storage.getPublicUrl(ruta);
   }
 
   @override

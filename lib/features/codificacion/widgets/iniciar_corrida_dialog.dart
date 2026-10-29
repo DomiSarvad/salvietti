@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../utils/notificaciones.dart';
+import '../../../shared/alertas.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/codificacion_modelos.dart';
 import '../services/codificacion_service.dart';
@@ -70,7 +70,7 @@ class _IniciarCorridaDialogState extends State<IniciarCorridaDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, 'Corrida iniciada.');
+      avisoExito(context, 'Corrida iniciada');
       Navigator.pop(context, true);
     } else {
       setState(() {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../entregas/widgets/pedido_form_dialog.dart';
 import '../../../shared/opciones_deslizables.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
@@ -134,10 +135,21 @@ class _Cabecera extends StatelessWidget {
     required this.pasosAyuda,
   });
 
-  Future<void> _nueva(BuildContext context) => showDialog<bool>(
-        context: context,
-        builder: (_) => RecepcionFormDialog(servicio: svc),
-      );
+  /// Si desde el formulario se eligió "Entregar a un área", vuelve con lo
+  /// recibido y se abre el pedido de Entregas ya cargado.
+  Future<void> _nueva(BuildContext context) async {
+    final r = await showDialog<Object?>(
+      context: context,
+      builder: (_) => RecepcionFormDialog(servicio: svc),
+    );
+    if (r is! List<(int, double)> || r.isEmpty || !context.mounted) return;
+    await PedidoFormDialog.abrirCargado(
+      context,
+      usuario: context.read<AuthService>().usuarioActual!,
+      lineas: r,
+      motivo: 'Recibido el ${fmtFecha(DateTime.now())}',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

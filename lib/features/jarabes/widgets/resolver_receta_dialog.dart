@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/pagina_o_dialogo.dart';
 import '../../../core/constants.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
@@ -73,7 +74,7 @@ class _ResolverRecetaDialogState extends State<ResolverRecetaDialog> {
     final puedeRechazar =
         svc.puedeAprobarComoCalidad || svc.puedeAprobarComoProduccion || svc.puedeConfirmarComoGerente;
 
-    return AlertDialog(
+    return AlertDialogAdaptable(
       title: Text('Receta de ${r.sabor ?? ''}'),
       content: SingleChildScrollView(
         child: Column(

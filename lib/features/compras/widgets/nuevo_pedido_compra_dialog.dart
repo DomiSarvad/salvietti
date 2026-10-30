@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/pagina_o_dialogo.dart';
 import '../../../core/constants.dart';
 import '../../../utils/notificaciones.dart';
 import '../models/compras_modelos.dart';
@@ -163,7 +164,7 @@ class _NuevoPedidoCompraDialogState extends State<NuevoPedidoCompraDialog> {
   @override
   Widget build(BuildContext context) {
     final ancho = MediaQuery.sizeOf(context).width;
-    return AlertDialog(
+    return AlertDialogAdaptable(
       title: const Text('Nuevo pedido de compra'),
       content: SizedBox(
         width: ancho < 600 ? ancho : 560,

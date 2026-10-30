@@ -28,7 +28,7 @@ class SesionInactividad {
     return (ahora ?? DateTime.now()).difference(ultima) > limite;
   }
 
-  static String get mensaje =>
-      'Por seguridad, como la app estuvo más de ${limite.inMinutes >= 60 ? '${limite.inHours} hora${limite.inHours == 1 ? '' : 's'}' : '${limite.inMinutes} minutos'} '
-      'sin usarse, volvé a ingresar. Lo que registraste sigue guardado.';
+  /// Corto, como en las apps de banco ("Tu sesión expiró"): sin él, que pida la
+  /// contraseña de golpe parece una falla.
+  static String get mensaje => 'Tu sesión se cerró por inactividad. Lo registrado sigue guardado.';
 }

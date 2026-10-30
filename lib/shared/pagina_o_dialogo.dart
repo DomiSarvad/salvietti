@@ -109,3 +109,67 @@ class DialogoAdaptable extends StatelessWidget {
     );
   }
 }
+
+/// Igual que `AlertDialog` (mismos parámetros), pero en el celular (< 600 px)
+/// ocupa toda la pantalla: barra negra con flecha de volver, el contenido y
+/// los botones abajo. Para pasar un formulario hecho con AlertDialog basta con
+/// cambiarle el nombre.
+class AlertDialogAdaptable extends StatelessWidget {
+  final Widget? title;
+  final Widget? content;
+  final List<Widget>? actions;
+  final bool scrollable;
+  const AlertDialogAdaptable({super.key, this.title, this.content, this.actions, this.scrollable = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width >= 600) {
+      return AlertDialog(title: title, content: content, actions: actions, scrollable: scrollable);
+    }
+    return Dialog.fullscreen(
+      backgroundColor: Colors.white,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: AppColors.negro,
+          surfaceTintColor: AppColors.negro,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            tooltip: 'Volver',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          titleSpacing: 0,
+          title: title == null
+              ? null
+              : DefaultTextStyle.merge(
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  child: title!,
+                ),
+        ),
+        body: SafeArea(
+          top: false,
+          child: SingleChildScrollView(padding: const EdgeInsets.all(16), child: content),
+        ),
+        bottomNavigationBar: actions == null || actions!.isEmpty
+            ? null
+            : SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFE3E7EB))),
+                  ),
+                  child: OverflowBar(
+                    alignment: MainAxisAlignment.end,
+                    spacing: 8,
+                    overflowSpacing: 8,
+                    children: actions!,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}

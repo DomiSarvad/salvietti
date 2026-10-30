@@ -294,6 +294,22 @@ permiso de verlo: faltaba en Inicio y Almacenes), y foto de cada ítem (`inv_ite
   antes. Para otro formulario: el service anota el campo, la pantalla envuelve cada campo.
   Fotos de Recepciones como casilleros "Foto 1, Foto 2…" con vista previa (formulario y detalle; en
   el detalle, tocar amplía con `mostrarFotoAmpliada`).
+- **Recepción → área** (2026-10-29): en "Nueva recepción", "Después de guardar, cargar otro ítem de
+  esta factura" deja el formulario abierto con proveedor/factura/fecha/transportador (vacía lo de cada
+  ítem; el buscador de ítem se reinicia con `ValueKey(_versionItem)`) y lista lo ya registrado. En
+  Almacén General, "Entregar a un área" cierra devolviendo `List<(itemId, cantidad real)>` y la
+  pantalla abre `PedidoFormDialog.abrirCargado` (Entregas, con su propio service): ítems y cantidades
+  cargados, "Entregar ahora" prendido; se elige el área y se puede quitar o bajar lo que no va. Usa el
+  `p_entregar` que `inv_crear_pedido` (v21) ya tenía: sin SQL nuevo. El área confirma como siempre
+  (conformidad por ítem, observación si no está conforme → "Con observaciones" para Almacén).
+- **Formularios con AlertDialog en el celular**: `AlertDialogAdaptable` (`pagina_o_dialogo.dart`, mismos
+  parámetros que `AlertDialog`; < 600 px `Dialog.fullscreen` con barra negra y botones abajo). Puesto en
+  Nuevo pedido de compra, Detalle de pedido de compra, Devolución, Resolver receta. Un formulario nuevo
+  hecho con AlertDialog va con este.
+- **Cierre por ausencia**: el aviso pasó a "Tu sesión se cerró por inactividad…" en un recuadro ámbar con
+  ícono (antes texto rojo, parecía un error). Se mantiene (computadoras compartidas por turno).
+- `CheckAnimado` (`lib/shared/check_animado.dart`): ✓ que se dibuja trazo a trazo. En `avisoExito` y en
+  el chip "Completado" de Producción del día.
 - **Foto de perfil perdida** (2026-10-29): `PerfilDialog` mandaba a la cola local CUALQUIER error de
   subida (no solo falta de red): se veía desde ese navegador, nunca llegaba al servidor y se perdía al
   borrarse sus datos. Ahora solo `ClienteOffline.esFallaDeRed` va a la cola; otro error se muestra.

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/pagina_o_dialogo.dart';
 import '../../../core/constants.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
@@ -65,7 +66,7 @@ class _DetallePedidoCompraDialogState extends State<DetallePedidoCompraDialog> {
     final resolver = svc.puedeAprobar && p.estado == EstadoCompra.pendiente;
     final ancho = MediaQuery.sizeOf(context).width;
 
-    return AlertDialog(
+    return AlertDialogAdaptable(
       title: Text('Pedido de compra #${p.id}'),
       content: SizedBox(
         width: ancho < 560 ? ancho : 520,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../shared/busqueda_local.dart';
-import '../../../utils/notificaciones.dart';
+import '../../../models/usuario.dart';
+import '../../../shared/alertas.dart';
+import '../repositories/entregas_repository.dart';
 import '../../../widgets/formulario_widgets.dart';
 import '../models/entregas_modelos.dart';
 import '../services/entregas_service.dart';
@@ -9,7 +11,35 @@ import '../services/entregas_service.dart';
 /// entregarlo en el acto (por ejemplo, según el plan del día).
 class PedidoFormDialog extends StatefulWidget {
   final EntregasService servicio;
-  const PedidoFormDialog({super.key, required this.servicio});
+
+  /// Ítems y cantidades ya cargados (por ejemplo, lo recién recibido en
+  /// Recepciones), y si arranca con "Entregar ahora" prendido.
+  final List<(int itemId, double cantidad)> iniciales;
+  final bool entregarAhora;
+  final String? motivo;
+  const PedidoFormDialog({
+    super.key,
+    required this.servicio,
+    this.iniciales = const [],
+    this.entregarAhora = false,
+    this.motivo,
+  });
+
+  /// Desde otro módulo (Recepciones): arma su propio service y abre el
+  /// formulario ya cargado, listo para elegir el área y entregar.
+  static Future<bool?> abrirCargado(
+    BuildContext context, {
+    required Usuario usuario,
+    required List<(int, double)> lineas,
+    String? motivo,
+  }) {
+    final svc = EntregasService(SupabaseEntregasRepository(), usuario);
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => PedidoFormDialog(
+          servicio: svc, iniciales: lineas, entregarAhora: true, motivo: motivo),
+    ).whenComplete(svc.dispose);
+  }
 
   @override
   State<PedidoFormDialog> createState() => _PedidoFormDialogState();
@@ -18,6 +48,10 @@ class PedidoFormDialog extends StatefulWidget {
 class _LineaForm {
   ItemPedible? item;
   final controlador = TextEditingController();
+  _LineaForm([this.item, double? cantidad]) {
+    if (cantidad != null) controlador.text = _texto(cantidad);
+  }
+  static String _texto(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : '$v';
 }
 
 class _PedidoFormDialogState extends State<PedidoFormDialog> {
@@ -29,7 +63,7 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
   String? _area;
   final _motivo = TextEditingController();
   final _lineas = <_LineaForm>[_LineaForm()];
-  bool _entregarAhora = false;
+  late bool _entregarAhora = widget.entregarAhora;
   bool _guardando = false;
   String? _error;
 
@@ -39,6 +73,7 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
   void initState() {
     super.initState();
     _area = _svc.esAlmacen ? null : _svc.areaPropia;
+    if (widget.motivo != null) _motivo.text = widget.motivo!;
     _cargar();
   }
 
@@ -58,6 +93,20 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
       setState(() {
         _items = IndiceBusqueda(items, _textoItem);
         _cargando = false;
+        // Cargado de antemano: solo los ítems que existen en Almacén General.
+        final porId = {for (final i in items) i.id: i};
+        final cargadas = [
+          for (final (id, cant) in widget.iniciales)
+            if (porId[id] != null) _LineaForm(porId[id], cant)
+        ];
+        if (cargadas.isNotEmpty) {
+          for (final l in _lineas) {
+            l.controlador.dispose();
+          }
+          _lineas
+            ..clear()
+            ..addAll(cargadas);
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -92,7 +141,8 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
     );
     if (!mounted) return;
     if (error == null) {
-      mostrarExito(context, _entregarAhora ? 'Pedido registrado y entregado.' : 'Pedido enviado.');
+      avisoExito(context, _entregarAhora ? 'Entregado' : 'Pedido enviado',
+          _entregarAhora ? 'El área tiene que confirmar lo que recibió.' : null);
       Navigator.pop(context, true);
     } else {
       setState(() {
@@ -182,6 +232,9 @@ class _PedidoFormDialogState extends State<PedidoFormDialog> {
           Expanded(
             flex: 3,
             child: Autocomplete<ItemPedible>(
+              initialValue: linea.item == null
+                  ? null
+                  : TextEditingValue(text: '${linea.item!.codigo} · ${linea.item!.detalle}'),
               displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
               optionsBuilder: (t) =>
                   _items.buscar(t.text, limite: 50, donde: (i) => !elegidos.contains(i.id)),

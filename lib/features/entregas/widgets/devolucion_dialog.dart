@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../shared/pagina_o_dialogo.dart';
 import '../../../shared/alertas.dart';
 import '../../../utils/formatters.dart';
 import '../models/entregas_modelos.dart';
@@ -58,7 +59,7 @@ class _DevolucionDialogState extends State<DevolucionDialog> {
   @override
   Widget build(BuildContext context) {
     final l = widget.linea;
-    return AlertDialog(
+    return AlertDialogAdaptable(
       title: Text('Devolver "${l.detalle}"'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

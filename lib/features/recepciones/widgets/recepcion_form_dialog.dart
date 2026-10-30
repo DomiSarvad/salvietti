@@ -42,6 +42,17 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
   bool _guardando = false;
   String? _error;
 
+  /// Factura con varios ítems: al guardar, el formulario queda abierto con el
+  /// proveedor, la factura y la fecha, listo para el siguiente ítem.
+  bool _otraMas = false;
+
+  /// Lo registrado en esta sesión (ítem y cantidad real en su unidad), para
+  /// poder entregarlo a un área en un solo paso.
+  final _registradas = <(ItemRecepcion, double)>[];
+
+  /// Cambia para vaciar el buscador de ítem (Autocomplete guarda su texto).
+  int _versionItem = 0;
+
   /// Una clave por campo, para señalar con un globo el que falta o está mal.
   final _claves = {for (final c in CampoRecepcion.values) c: GlobalKey()};
   Widget _campo(CampoRecepcion c, Widget hijo) => KeyedSubtree(key: _claves[c], child: hijo);
@@ -214,6 +225,13 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
     final error = await _svc.guardar(_borrador());
     if (!mounted) return;
     if (error == null) {
+      final real = RecepcionesService.aUnidadItem(_num(_cantReal), _unidad, _item!.unidad);
+      if (real != null) _registradas.add((_item!, real));
+      if (_otraMas) {
+        avisoExito(context, 'Recepción registrada', 'Cargá el siguiente ítem de la factura.');
+        setState(_limpiarParaOtro);
+        return;
+      }
       avisoExito(context, 'Recepción registrada');
       Navigator.pop(context, true);
       return;
@@ -226,6 +244,20 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
       _error = campo == null ? error : null;
     });
     if (campo != null) avisarCampo(_claves[campo]!, error);
+  }
+
+  /// Deja proveedor, factura, fecha y transportador; vacía lo que es de cada ítem.
+  void _limpiarParaOtro() {
+    _guardando = false;
+    _item = null;
+    _versionItem++;
+    for (final c in [_cantFactura, _cantReal, _lote, _senasac, _precio, _obs]) {
+      c.clear();
+    }
+    _fabricacion = null;
+    _vencimiento = null;
+    _senasacAuto = false;
+    _fotos.clear();
   }
 
   InputDecoration _deco(String label, {String? ayuda, Widget? sufijo}) => InputDecoration(
@@ -309,6 +341,7 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   sep,
                 ],
                 _campo(CampoRecepcion.item, Autocomplete<ItemRecepcion>(
+                  key: ValueKey('item$_versionItem'),
                   displayStringForOption: (i) => '${i.codigo} · ${i.detalle}',
                   optionsBuilder: (t) => _items.buscar(t.text),
                   onSelected: (i) {
@@ -532,6 +565,43 @@ class _RecepcionFormDialogState extends State<RecepcionFormDialog> {
                   maxLines: 2,
                   decoration: _deco('Observaciones (opcional)'),
                 )),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _otraMas,
+                  onChanged: (v) => setState(() => _otraMas = v ?? false),
+                  title: const Text('Después de guardar, cargar otro ítem de esta factura'),
+                ),
+                if (_registradas.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primario.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Text('Ya registrado de esta factura (${_registradas.length})',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      for (final (item, cant) in _registradas)
+                        Text('• ${item.detalle}: ${fmtNum(cant, decimales: 3)} ${item.unidad}',
+                            style: const TextStyle(fontSize: 13)),
+                      // Pasar lo recibido a un área (todo o una parte): abre el
+                      // pedido ya cargado con "Entregar ahora"; el área confirma.
+                      if (_almacenId == 'general') ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => Navigator.pop(context, [
+                            for (final (item, cant) in _registradas) (item.id, cant),
+                          ]),
+                          icon: const Icon(Icons.local_shipping_outlined),
+                          label: const Text('Entregar a un área'),
+                        ),
+                      ],
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 4),
                   Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),

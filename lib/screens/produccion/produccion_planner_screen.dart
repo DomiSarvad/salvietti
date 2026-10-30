@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/produccion_service.dart';
 import '../../services/sync_service.dart';
 import '../../shared/ayuda/tour_ayuda.dart';
+import '../../shared/check_animado.dart';
 import '../../shared/pagina_o_dialogo.dart';
 import '../../utils/formatters.dart';
 import 'constructor_plan_dialog.dart';
@@ -383,10 +384,14 @@ class _ProduccionPlannerScreenState extends State<ProduccionPlannerScreen> {
                     usuario.puedeEditarProduccion
                         ? ActionChip(
                             label: const Text('Completado'),
-                            avatar: const Icon(Icons.edit_outlined, size: 16),
+                            // El ✓ se dibuja al aparecer; tocar el chip corrige lo cargado.
+                            avatar: const CheckAnimado(tamano: 18, grosor: 2.5),
                             onPressed: () => _marcarCompletado(d),
                           )
-                        : const Chip(label: Text('Completado'))
+                        : const Chip(
+                            label: Text('Completado'),
+                            avatar: CheckAnimado(tamano: 18, grosor: 2.5),
+                          )
                   else if (usuario.puedeEditarProduccion)
                     FilledButton(
                       onPressed: () => _marcarCompletado(d),

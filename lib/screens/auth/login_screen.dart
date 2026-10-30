@@ -220,8 +220,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     // cerró la sesión (ausencia, contraseña cambiada…). Se
                     // escucha en vivo: la revisión de la sesión al abrir la
                     // app puede terminar después de que esta pantalla aparece.
-                    Text(_error ?? context.watch<AuthService>().avisoLogin!,
-                        style: const TextStyle(color: Colors.red)),
+                    // Un error va en rojo; un aviso (sesión cerrada por ausencia) es
+                    // informativo: recuadro claro con ícono, no parece una falla.
+                    if (_error != null)
+                      Text(_error!, style: const TextStyle(color: Colors.red))
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF4E0),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.lock_clock_outlined, size: 18, color: Color(0xFFB26A00)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(context.watch<AuthService>().avisoLogin!,
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF7A4A00))),
+                          ),
+                        ]),
+                      ),
                   ],
                   const SizedBox(height: 12),
                   SizedBox(

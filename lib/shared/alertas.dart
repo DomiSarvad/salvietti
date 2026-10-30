@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
+import 'check_animado.dart';
 
 /// Ventanas de aviso con ícono grande en un círculo, título grande y un
 /// texto corto (pedido del usuario, tomado de otro sistema que le gustaba):
@@ -49,7 +50,10 @@ class _Alerta extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: e.color.withValues(alpha: 0.45), width: 3),
                 ),
-                child: Icon(e.icono, size: 42, color: e.color),
+                // El ✓ de "listo" se dibuja trazo a trazo; los demás íconos, fijos.
+                child: tipo == TipoAlerta.exito
+                    ? Center(child: CheckAnimado(tamano: 46, color: e.color, grosor: 4.5))
+                    : Icon(e.icono, size: 42, color: e.color),
               ),
             ),
             const SizedBox(height: 16),

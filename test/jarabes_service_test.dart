@@ -173,6 +173,11 @@ Future<JarabesService> _svc(String rol, [_Repo? repo]) async {
 
 void main() {
   group('permisos', () {
+    test('el avance de Soplado lo ve quien prepara, no el Jefe de Producción', () async {
+      expect((await _svc('jarabes')).muestraAvanceSoplado, isTrue);
+      expect((await _svc('jefe_produccion')).muestraAvanceSoplado, isFalse);
+    });
+
     test('sin permiso de ver Producción no carga nada', () async {
       final s = await _svc('control_calidad');
       expect(s.puedeVerProduccion, isFalse);

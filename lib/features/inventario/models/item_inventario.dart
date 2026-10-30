@@ -14,6 +14,15 @@ class ItemInventario {
   /// color, formato, peso_g, ancho_mm, micronaje… (solo los que se llenan).
   final Map<String, dynamic> atributos;
 
+  /// Claves de [atributos] que el sistema ya maneja con su propio campo.
+  static const atributosConocidos = {'color', 'formato', 'peso_g', 'ancho_mm', 'micronaje'};
+
+  /// "Otros datos": columnas propias que vinieron de un Excel (Proveedor…).
+  Map<String, dynamic> get otrosDatos => {
+        for (final e in atributos.entries)
+          if (!atributosConocidos.contains(e.key)) e.key: e.value
+      };
+
   /// Foto del ítem (v48, bucket público "items").
   final String? fotoUrl;
 

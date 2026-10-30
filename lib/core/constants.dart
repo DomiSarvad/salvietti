@@ -27,6 +27,12 @@ class Rol {
   /// campana cuando hace falta (ej. un pedido de compra por aprobar).
   static const soloInformes = {gerente};
 
+  /// Roles que no ven lo operativo de Almacén (Recepciones, Pedidos de las
+  /// áreas, Pedidos de compra) ni el avance de Soplado en Jarabes: van directo
+  /// a los resultados (Informes). Solo presentación, igual que [soloInformes]:
+  /// conservan el permiso "ver" porque Informes lee esas tablas.
+  static const sinOperacionAlmacen = {jefeProduccion};
+
   /// Ordenados por área, tal como se muestran en el selector.
   static const todos = [
     gerente,

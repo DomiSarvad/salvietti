@@ -304,8 +304,10 @@ class _VistaState extends State<_Vista> {
           _SeccionRecetasPendientes(svc: svc),
           const SizedBox(height: 20),
         ],
-        _SeccionAvanceSoplado(svc: svc),
-        const SizedBox(height: 20),
+        if (svc.muestraAvanceSoplado) ...[
+          _SeccionAvanceSoplado(svc: svc),
+          const SizedBox(height: 20),
+        ],
         if (svc.enCurso.isNotEmpty) ...[
           const Text('En curso',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),

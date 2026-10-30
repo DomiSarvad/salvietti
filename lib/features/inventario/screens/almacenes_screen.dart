@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../shared/recargar_al_reconectar.dart';
 import '../../../core/constants.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/archivo_service.dart';
 import '../../../shared/ayuda/tour_ayuda.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
@@ -15,6 +16,7 @@ import '../../../shared/filtros/barra_filtros.dart';
 import '../services/inventario_service.dart';
 import 'balance_screen.dart';
 import '../widgets/conteo_dialog.dart';
+import '../widgets/importar_excel_dialog.dart';
 import '../widgets/item_form_dialog.dart';
 import '../widgets/salida_directa_dialog.dart';
 import '../widgets/movimientos_dialog.dart';
@@ -280,6 +282,15 @@ class _Cabecera extends StatelessWidget {
                 onPressed: () => _salidaDirecta(context),
                 icon: const Icon(Icons.local_shipping_outlined),
                 label: const Text('Salida directa'),
+              ),
+            if (svc.puedeCrear)
+              OutlinedButton.icon(
+                onPressed: () => showDialog<bool>(
+                  context: context,
+                  builder: (_) => ImportarExcelInventarioDialog(servicio: svc),
+                ),
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Importar Excel'),
               ),
             if (svc.puedeCrear)
               FilledButton.icon(
@@ -554,6 +565,16 @@ class _TablaItems extends StatelessWidget {
     error == null ? avisoExito(context, 'Eliminado', 'El ítem se quitó del inventario.') : mostrarError(context, error);
   }
 
+  Future<void> _fichaPdf(BuildContext context, ExistenciaItem e) async {
+    try {
+      final msg = await ArchivoService.guardar(await svc.fichaPdf(e),
+          nombre: 'Ficha ${e.codigo} - ${e.detalle}', ext: 'pdf', mimeType: 'application/pdf');
+      if (context.mounted) mostrarInfo(context, msg);
+    } catch (_) {
+      if (context.mounted) mostrarError(context, 'No se pudo generar la ficha. Revisá la conexión.');
+    }
+  }
+
   Color _colorSituacion(SituacionStock s) {
     switch (s) {
       case SituacionStock.critico:
@@ -659,6 +680,11 @@ class _TablaItems extends StatelessWidget {
           tooltip: 'Movimientos',
           icon: const Icon(Icons.swap_vert),
           onPressed: () => _movimientos(context, e),
+        ),
+        IconButton(
+          tooltip: 'Ficha en PDF',
+          icon: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFDC2626)),
+          onPressed: () => _fichaPdf(context, e),
         ),
         if (svc.puedeEditar)
           IconButton(

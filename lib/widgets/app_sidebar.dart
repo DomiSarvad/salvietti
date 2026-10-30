@@ -39,11 +39,8 @@ class AppSidebar extends StatelessWidget {
       _Item('almacenes', 'Almacenes', Icons.warehouse_outlined,
           operativo && usuario.permisos != null && usuario.puedeVerInventario),
       _Item('recepciones', 'Recepciones', Icons.local_shipping_outlined,
-          operativo && usuario.puedeVerModulo(Modulo.recepciones)),
-      _Item('entregas', 'Entregas', Icons.assignment_turned_in_outlined,
-          operativo && usuario.puedeVerModulo(Modulo.entregas)),
-      _Item('compras', 'Pedidos de compra', Icons.shopping_cart_outlined,
-          operativo && usuario.puedeVerModulo(Modulo.compras)),
+          operativo && !usuario.sinOperacionAlmacen && usuario.puedeVerModulo(Modulo.recepciones)),
+      // Entregas y Pedidos de compra están dentro de Solicitudes (pestañas).
       _Item('soplado', 'Soplado', Icons.air_outlined,
           operativo && usuario.puedeVerModulo(Modulo.soplado)),
       _Item('calidad', 'Control de Calidad', Icons.science_outlined,
@@ -62,9 +59,14 @@ class AppSidebar extends StatelessWidget {
           usuario.puedeVerHistorial),
       _Item('usuarios', 'Usuarios', Icons.people_outline,
           usuario.puedeVerUsuarios),
-      // Al final: se abre también desde la campana.
+      // Al final: se abre también desde la campana. También para el Gerente:
+      // es quien las resuelve. Junta Solicitudes, Pedidos de las áreas
+      // (Entregas) y Pedidos de compra.
       _Item('solicitudes', 'Solicitudes', Icons.mark_email_read_outlined,
-          operativo && usuario.puedeVerModulo(Modulo.solicitudes)),
+          usuario.puedeVerModulo(Modulo.solicitudes) ||
+              (!usuario.sinOperacionAlmacen &&
+                  ((operativo && usuario.puedeVerModulo(Modulo.entregas)) ||
+                      usuario.puedeVerModulo(Modulo.compras)))),
       // Siempre visible, para cualquier rol: es la referencia escrita de
       // cómo funciona cada parte, no algo que dependa de permisos.
       _Item('manual', 'Manual de usuario', Icons.menu_book_outlined, true),
@@ -81,7 +83,9 @@ class AppSidebar extends StatelessWidget {
           for (final item in items.where((i) => i.visible))
             _FilaMenu(
               item: item,
-              activa: rutaActual == item.ruta,
+              // Entregas y Compras se abren como pestañas de Solicitudes.
+              activa: rutaActual == item.ruta ||
+                  (item.ruta == 'solicitudes' && (rutaActual == 'entregas' || rutaActual == 'compras')),
               onTap: () => onNavegar(item.ruta),
             ),
         ],

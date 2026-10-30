@@ -77,6 +77,8 @@ class ListaRecetas extends StatelessWidget {
           subtitulo: 'Propuesta el ${fmtFecha(r.creadaEn)}',
           estado: _estado(r.estado),
           colorEstado: _color(r.estado),
+          nombrePdf: 'Receta ${r.sabor ?? ''} ${fmtFecha(r.creadaEn).replaceAll('/', '-')}',
+          firmasPdf: const ['Control de Calidad', 'Jefe de Producción', 'Gerencia'],
           secciones: [
             SeccionDetalle(titulo: 'Quién intervino', filas: [
               ('Propuesta por', r.creadaPorNombre),

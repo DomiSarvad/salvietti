@@ -11,6 +11,7 @@ import '../models/entregas_modelos.dart';
 import '../repositories/entregas_repository.dart';
 import '../services/entregas_service.dart';
 import '../widgets/conformidad_dialog.dart';
+import '../widgets/detalle_pedido.dart';
 import '../widgets/devolucion_dialog.dart';
 import '../widgets/motivo_dialog.dart';
 import '../widgets/pedido_form_dialog.dart';
@@ -19,24 +20,26 @@ import '../../../shared/filtros/barra_filtros.dart';
 /// Bandeja de pedidos internos: por entregar, por confirmar, con
 /// observaciones y cerrados. Solo UI; las reglas viven en el service.
 class EntregasScreen extends StatelessWidget {
-  const EntregasScreen({super.key});
+  /// Dentro de Solicitudes (una pestaña más): sin título propio.
+  final bool incrustada;
+  const EntregasScreen({super.key, this.incrustada = false});
 
   @override
   Widget build(BuildContext context) {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
-      create: (_) =>
-          EntregasService(SupabaseEntregasRepository(), usuario)..iniciar(),
+      create: (_) => EntregasService(SupabaseEntregasRepository(), usuario)..iniciar(),
       child: RecargarAlReconectar(
         alReconectar: (c) => c.read<EntregasService>().recargar(),
-        child: const _Vista(),
+        child: _Vista(incrustada: incrustada),
       ),
     );
   }
 }
 
 class _Vista extends StatefulWidget {
-  const _Vista();
+  final bool incrustada;
+  const _Vista({this.incrustada = false});
 
   @override
   State<_Vista> createState() => _VistaState();
@@ -53,7 +56,7 @@ class _VistaState extends State<_Vista> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted && !widget.incrustada) {
         TourAyuda.mostrar(context, idTour: 'entregas', soloSiNoVisto: true, pasos: _pasosAyuda());
       }
     });
@@ -94,21 +97,21 @@ class _VistaState extends State<_Vista> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: EdgeInsets.fromLTRB(16, widget.incrustada ? 0 : 12, 16, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text('Entregas',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                  ),
-                  BotonAyuda(idTour: 'entregas', pasos: _pasosAyuda),
-                ],
-              ),
+              if (!widget.incrustada)
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Entregas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                    ),
+                    BotonAyuda(idTour: 'entregas', pasos: _pasosAyuda),
+                  ],
+                ),
               if (svc.puedeCrearPedido) ...[
-                const SizedBox(height: 8),
+                if (!widget.incrustada) const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton.icon(
@@ -149,8 +152,8 @@ class _VistaState extends State<_Vista> {
               ? (svc.filtro.activo
                   ? const SinResultados()
                   : const Center(
-                      child: Text('No hay pedidos en esta bandeja.',
-                          style: TextStyle(color: Colors.black54))))
+                      child:
+                          Text('No hay pedidos en esta bandeja.', style: TextStyle(color: Colors.black54))))
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: items.length,
@@ -217,105 +220,106 @@ class _TarjetaPedido extends StatelessWidget {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Pedido #${pedido.id} · ${AreaPedido.etiqueta(pedido.areaDestino)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: _colorEstado(pedido.estado).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Text(pedido.estado.etiqueta,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _colorEstado(pedido.estado))),
-                ),
-              ],
-            ),
-            Text(
-              'Pedido por ${pedido.solicitanteNombre ?? '—'} · ${fmtFecha(pedido.fecha)}'
-              '${pedido.motivo == null ? '' : ' · ${pedido.motivo}'}',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            const SizedBox(height: 8),
-            for (final l in pedido.lineas)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(l.detalle)),
-                    Text(
-                      pedido.estado == EstadoPedido.pendiente
-                          ? '${fmtNum(l.cantidadPedida)} ${l.unidad}'
-                          : '${fmtNum(l.cantidadEntregada ?? l.cantidadPedida)} ${l.unidad}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    if (l.cantidadDevuelta > 0) ...[
-                      const SizedBox(width: 6),
-                      Text('(devuelto ${fmtNum(l.cantidadDevuelta)})',
-                          style: const TextStyle(fontSize: 11, color: Colors.black45)),
-                    ],
-                    if (l.observacion != null) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.warning_amber_rounded,
-                          size: 16, color: Color(0xFFD97706)),
-                    ],
-                    if (svc.puedeDevolver(pedido, l))
-                      IconButton(
-                        tooltip: 'Registrar devolución',
-                        icon: const Icon(Icons.keyboard_return, size: 18),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _devolver(context, l),
-                      ),
-                  ],
-                ),
-              ),
-            if (pedido.resolucion != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('Resolución: ${pedido.resolucion}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
-              ),
-            if (svc.puedeEntregar(pedido) ||
-                svc.puedeConfirmar(pedido) ||
-                svc.puedeResolver(pedido) ||
-                svc.puedeAnular(pedido)) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
+      // Tocar abre el detalle con el comprobante en PDF.
+      child: InkWell(
+        onTap: () => abrirDetallePedido(context, pedido, _colorEstado(pedido.estado)),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  if (svc.puedeEntregar(pedido))
-                    FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                        onPressed: () => _entregar(context),
-                        child: const Text('Entregar')),
-                  if (svc.puedeConfirmar(pedido))
-                    FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
-                        onPressed: () => _confirmar(context),
-                        child: const Text('Confirmar recepción')),
-                  if (svc.puedeResolver(pedido))
-                    OutlinedButton(
-                        onPressed: () => _resolver(context), child: const Text('Resolver')),
-                  if (svc.puedeAnular(pedido))
-                    TextButton(
-                        style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
-                        onPressed: () => _anular(context),
-                        child: const Text('Anular')),
+                  Expanded(
+                    child: Text('Pedido #${pedido.id} · ${AreaPedido.etiqueta(pedido.areaDestino)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: _colorEstado(pedido.estado).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(pedido.estado.etiqueta,
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600, color: _colorEstado(pedido.estado))),
+                  ),
                 ],
               ),
+              Text(
+                'Pedido por ${pedido.solicitanteNombre ?? '—'} · ${fmtFecha(pedido.fecha)}'
+                '${pedido.motivo == null ? '' : ' · ${pedido.motivo}'}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 8),
+              for (final l in pedido.lineas)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(l.detalle)),
+                      Text(
+                        pedido.estado == EstadoPedido.pendiente
+                            ? '${fmtNum(l.cantidadPedida)} ${l.unidad}'
+                            : '${fmtNum(l.cantidadEntregada ?? l.cantidadPedida)} ${l.unidad}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (l.cantidadDevuelta > 0) ...[
+                        const SizedBox(width: 6),
+                        Text('(devuelto ${fmtNum(l.cantidadDevuelta)})',
+                            style: const TextStyle(fontSize: 11, color: Colors.black45)),
+                      ],
+                      if (l.observacion != null) ...[
+                        const SizedBox(width: 6),
+                        const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFD97706)),
+                      ],
+                      if (svc.puedeDevolver(pedido, l))
+                        IconButton(
+                          tooltip: 'Registrar devolución',
+                          icon: const Icon(Icons.keyboard_return, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _devolver(context, l),
+                        ),
+                    ],
+                  ),
+                ),
+              if (pedido.resolucion != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('Resolución: ${pedido.resolucion}',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                ),
+              if (svc.puedeEntregar(pedido) ||
+                  svc.puedeConfirmar(pedido) ||
+                  svc.puedeResolver(pedido) ||
+                  svc.puedeAnular(pedido)) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (svc.puedeEntregar(pedido))
+                      FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                          onPressed: () => _entregar(context),
+                          child: const Text('Entregar')),
+                    if (svc.puedeConfirmar(pedido))
+                      FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: AppColors.primario),
+                          onPressed: () => _confirmar(context),
+                          child: const Text('Confirmar recepción')),
+                    if (svc.puedeResolver(pedido))
+                      OutlinedButton(onPressed: () => _resolver(context), child: const Text('Resolver')),
+                    if (svc.puedeAnular(pedido))
+                      TextButton(
+                          style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                          onPressed: () => _anular(context),
+                          child: const Text('Anular')),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

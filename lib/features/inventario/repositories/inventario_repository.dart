@@ -22,7 +22,11 @@ abstract class InventarioRepository {
   Future<List<CategoriaInv>> categoriasTodas();
   Future<List<ExistenciaItem>> existencias(String almacenId);
   Future<ItemInventario> item(int id);
-  Future<void> crearItem(ItemInventario item);
+
+  /// Ficha completa (con color, formato, medidas…) de varios ítems.
+  Future<List<ItemInventario>> itemsPorId(List<int> ids);
+  /// Devuelve el id del ítem creado (null si no vino, por ejemplo sin internet).
+  Future<int?> crearItem(ItemInventario item);
   Future<void> actualizarItem(ItemInventario item);
 
   /// Sube la foto de un ítem (bucket público "items") y devuelve su dirección.
@@ -147,8 +151,25 @@ class SupabaseInventarioRepository implements InventarioRepository {
   }
 
   @override
-  Future<void> crearItem(ItemInventario item) async {
-    await _db.from(_items).insert(item.toMap()).timeout(SupabaseService.timeoutRed);
+  Future<List<ItemInventario>> itemsPorId(List<int> ids) async {
+    if (ids.isEmpty) return const [];
+    final filas = await _db
+        .from(_items)
+        .select()
+        .inFilter('id', ids)
+        .timeout(SupabaseService.timeoutRed);
+    return [for (final f in filas) ItemInventario.fromMap(f)];
+  }
+
+  @override
+  Future<int?> crearItem(ItemInventario item) async {
+    final fila = await _db
+        .from(_items)
+        .insert(item.toMap())
+        .select('id')
+        .maybeSingle()
+        .timeout(SupabaseService.timeoutRed);
+    return (fila?['id'] as num?)?.toInt();
   }
 
   @override

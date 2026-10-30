@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
+import '../core/modulos.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_chrome.dart';
 import '../widgets/app_sidebar.dart';
@@ -72,16 +73,45 @@ class _HomeShellState extends State<HomeShell> {
         _saborJarabesInicial = null;
       });
 
+  List<PestanaExtra> _pestanasSolicitudes() {
+    final u = context.read<AuthService>().usuarioActual!;
+    // El Jefe de Producción va directo a resultados (Informes).
+    if (u.sinOperacionAlmacen) return const [];
+    return [
+      // El Gerente no entrega: no ve lo que las áreas le piden a Almacén.
+      if (!u.soloInformes && u.puedeVerModulo(Modulo.entregas))
+        PestanaExtra(
+          id: 'entregas',
+          etiqueta: 'Pedidos de las áreas',
+          icono: Icons.assignment_turned_in_outlined,
+          construir: () => const EntregasScreen(incrustada: true),
+        ),
+      if (u.puedeVerModulo(Modulo.compras))
+        PestanaExtra(
+          id: 'compras',
+          etiqueta: 'Pedidos de compra',
+          icono: Icons.shopping_cart_outlined,
+          construir: () => const ComprasScreen(incrustada: true),
+        ),
+    ];
+  }
+
   Widget _pantalla() {
     switch (_ruta) {
       case 'almacenes':
         return AlmacenesScreen(almacenInicial: _almacenInicial);
       case 'recepciones':
         return const RecepcionesScreen();
+      // Entregas (lo que piden las áreas a Almacén) y Pedidos de compra van
+      // como pestañas de Solicitudes, al lado de "Mis solicitudes".
       case 'entregas':
-        return const EntregasScreen();
+      case 'compras':
       case 'solicitudes':
-        return const SolicitudesScreen();
+        return SolicitudesScreen(
+          key: ValueKey(_ruta),
+          extras: _pestanasSolicitudes(),
+          inicial: _ruta == 'solicitudes' ? null : _ruta,
+        );
       case 'soplado':
         return const SopladoScreen();
       case 'jarabes':
@@ -102,8 +132,6 @@ class _HomeShellState extends State<HomeShell> {
         return const InformeScreen();
       case 'informes':
         return const InformesScreen();
-      case 'compras':
-        return const ComprasScreen();
       case 'produccion':
         return ProduccionPlannerScreen(onIrAJarabes: _abrirJarabesConSabor);
       case 'historial':
@@ -124,7 +152,7 @@ class _HomeShellState extends State<HomeShell> {
     'dashboard': 'Inicio',
     'almacenes': 'Almacenes',
     'recepciones': 'Recepciones',
-    'entregas': 'Entregas',
+    'entregas': 'Solicitudes',
     'solicitudes': 'Solicitudes',
     'soplado': 'Soplado',
     'jarabes': 'Jarabes',
@@ -136,7 +164,7 @@ class _HomeShellState extends State<HomeShell> {
     'soda_caustica': 'Soda Cáustica',
     'informe_gerente': 'Informe de Producción',
     'informes': 'Informes',
-    'compras': 'Pedidos de compra',
+    'compras': 'Solicitudes',
     'produccion': 'Producción del día',
     'historial': 'Historial / Bitácora',
     'usuarios': 'Usuarios',
@@ -152,7 +180,7 @@ class _HomeShellState extends State<HomeShell> {
     'almacenes': ['Almacenes'],
     'recepciones': ['Recepciones'],
     'entregas': ['Entregas', 'Pedido a Almacén'],
-    'solicitudes': ['Solicitud'],
+    'solicitudes': ['Solicitud', 'Entregas', 'Pedido a Almacén', 'Pedidos de compra'],
     'compras': ['Pedidos de compra'],
     'soplado': ['Soplado'],
     'jarabes': ['Jarabes', 'Pedido a Almacén'],

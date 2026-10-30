@@ -135,18 +135,27 @@ class _BarraFiltrosState extends State<BarraFiltros> {
     );
   }
 
-  Widget _botonExportar({required bool pdf}) => Tooltip(
+  Widget _botonExportar({required bool pdf}) {
+    final color = pdf ? const Color(0xFFDC2626) : const Color(0xFF16A34A);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Tooltip(
         message: pdf ? 'Descargar en PDF lo que se ve' : 'Descargar en Excel lo que se ve',
-        child: IconButton.outlined(
+        child: IconButton(
           onPressed: _exportando ? null : () => _exportar(pdf: pdf),
+          // Blanco con un tinte de su color y relieve, como los demás botones.
           style: IconButton.styleFrom(
-            side: const BorderSide(color: Color(0xFFCBD5E1)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            backgroundColor: Color.alphaBlend(color.withValues(alpha: 0.07), Colors.white),
+            side: BorderSide(color: color.withValues(alpha: 0.35)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 1.5,
+            shadowColor: color.withValues(alpha: 0.4),
           ),
-          icon: Icon(pdf ? Icons.picture_as_pdf_outlined : Icons.table_view_outlined,
-              color: pdf ? const Color(0xFFDC2626) : const Color(0xFF16A34A)),
+          icon: Icon(pdf ? Icons.picture_as_pdf_outlined : Icons.table_view_outlined, color: color),
         ),
-      );
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -173,7 +182,6 @@ class _BarraFiltrosState extends State<BarraFiltros> {
             ),
           ),
           if (widget.reporte != null) ...[
-            const SizedBox(width: 6),
             _botonExportar(pdf: true),
             _botonExportar(pdf: false),
           ],

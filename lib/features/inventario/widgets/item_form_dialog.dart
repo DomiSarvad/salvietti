@@ -62,6 +62,7 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
   late final TextEditingController _peso;
   late final TextEditingController _ancho;
   late final TextEditingController _micronaje;
+  late final Map<String, TextEditingController> _otros;
 
   int? _categoriaId;
   String _unidad = 'UNI';
@@ -104,6 +105,10 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
     _peso = TextEditingController(text: t(i?.atributos['peso_g']));
     _ancho = TextEditingController(text: t(i?.atributos['ancho_mm']));
     _micronaje = TextEditingController(text: t(i?.atributos['micronaje']));
+    _otros = {
+      if (i != null)
+        for (final e in i.otrosDatos.entries) e.key: TextEditingController(text: t(e.value))
+    };
     _categoriaId = i?.categoriaId ?? _hojaInicial(widget.categoriaInicial);
     if (i != null) _unidad = i.unidad;
   }
@@ -121,7 +126,7 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
   void dispose() {
     for (final c in [
       _detalle, _unidadCompra, _factor, _porCaja, _minimo, _consumo,
-      _color, _formato, _peso, _ancho, _micronaje,
+      _color, _formato, _peso, _ancho, _micronaje, ..._otros.values,
     ]) {
       c.dispose();
     }
@@ -165,6 +170,9 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
       if (_num(_peso) != null) 'peso_g': _num(_peso),
       if (_num(_ancho) != null) 'ancho_mm': _num(_ancho),
       if (_num(_micronaje) != null) 'micronaje': _num(_micronaje),
+      // Otros datos (columnas propias de un Excel): se conservan al editar.
+      for (final e in _otros.entries)
+        if (_texto(e.value) != null) e.key: _texto(e.value),
     };
 
     final item = ItemInventario(
@@ -332,6 +340,15 @@ class _ItemFormDialogState extends State<ItemFormDialog> {
             _campo(_ancho, 'Ancho (mm)', numerico: true),
             _campo(_micronaje, 'Micronaje', numerico: true),
           ]),
+          if (_otros.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Otros datos', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            for (final e in _otros.entries) ...[
+              _campo(e.value, e.key, max: 200),
+              sep,
+            ],
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: Color(0xFFDC2626))),

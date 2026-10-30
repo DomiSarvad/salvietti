@@ -37,6 +37,9 @@ class CampanaService extends ChangeNotifier {
 
   bool get puedeCrearSolicitud => _puede(Modulo.solicitudes, Accion.crear);
 
+  /// El Gerente no pide, pero entra a Solicitudes a ver y resolver.
+  bool get puedeVerSolicitudes => _puede(Modulo.solicitudes, Accion.ver);
+
   int get total => avisos.fold(0, (s, a) => s + a.cantidad);
 
   void iniciar() {

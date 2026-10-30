@@ -37,6 +37,10 @@ class JarabesService extends ChangeNotifier {
   /// roles del proceso (alcanza con el permiso general de aprobar).
   bool get puedeAprobarReceta => _puede(Modulo.recetas, Accion.aprobar);
 
+  /// El avance de Soplado sirve a quien prepara (no preparar de más); el Jefe
+  /// de Producción mira resultados en Informes.
+  bool get muestraAvanceSoplado => !_usuario.sinOperacionAlmacen;
+
   /// El cambio de receta lo aprueban Calidad Y Producción por separado, y
   /// recién con las dos el Gerente la activa con su clave (sección 7 del
   /// md). Cada visto bueno es exclusivo de su rol.

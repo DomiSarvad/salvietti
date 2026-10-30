@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
+import '../utils/notificaciones.dart';
+import 'reportes/comprobante_pdf.dart';
 
 /// Página de detalle de un registro (tocar una tarjeta de un historial): barra
 /// negra con título y subtítulo, un recuadro con el estado y los datos en
 /// bloques "etiqueta — valor". Misma forma en todos los módulos.
+///
+/// Con [nombrePdf], la barra tiene un botón que baja un comprobante PDF con
+/// los MISMOS datos (estado, secciones y [tablasPdf]): para lo que pasa entre
+/// dos áreas (un pedido, una compra, una receta), por si hace falta en papel.
 class PaginaDetalle extends StatelessWidget {
   final String titulo;
   final String? subtitulo;
@@ -16,6 +22,13 @@ class PaginaDetalle extends StatelessWidget {
   /// Lo que no es "etiqueta — valor" (listas, botones), al final.
   final List<Widget> extra;
 
+  /// Nombre del archivo del comprobante; null = sin botón de PDF.
+  final String? nombrePdf;
+
+  /// Lo que en pantalla va en [extra] y en el PDF como tabla (ej. ítems).
+  final List<TablaComprobante> tablasPdf;
+  final List<String> firmasPdf;
+
   const PaginaDetalle({
     super.key,
     required this.titulo,
@@ -24,18 +37,46 @@ class PaginaDetalle extends StatelessWidget {
     this.colorEstado,
     this.secciones = const [],
     this.extra = const [],
+    this.nombrePdf,
+    this.tablasPdf = const [],
+    this.firmasPdf = const [],
   });
 
   /// Abre la página encima de la pantalla actual.
   static Future<void> abrir(BuildContext context, PaginaDetalle pagina) =>
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => pagina));
 
+  Future<void> _pdf(BuildContext context) async {
+    try {
+      final bytes = await ComprobantePdf.generar(
+        titulo: titulo,
+        subtitulo: subtitulo,
+        estado: estado,
+        colorEstado: colorEstado?.toARGB32(),
+        secciones: [for (final s in secciones) (s.titulo, s.filas)],
+        tablas: tablasPdf,
+        firmas: firmasPdf,
+      );
+      final msg = await ComprobantePdf.guardar(bytes, nombrePdf!);
+      if (context.mounted) mostrarInfo(context, msg);
+    } catch (_) {
+      if (context.mounted) mostrarError(context, 'No se pudo generar el PDF.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = colorEstado ?? AppColors.primario;
     return Scaffold(
       backgroundColor: AppColors.fondo,
-      appBar: barraNegra(titulo, subtitulo),
+      appBar: barraNegra(titulo, subtitulo, [
+        if (nombrePdf != null)
+          IconButton(
+            tooltip: 'Comprobante en PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: () => _pdf(context),
+          ),
+      ]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (estado != null) ...[
           Align(

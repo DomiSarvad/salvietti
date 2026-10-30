@@ -11,9 +11,13 @@ import '../models/item_inventario.dart';
 import '../models/movimiento_inv.dart';
 import '../models/movimiento_periodo.dart';
 import '../../../shared/filtros/filtro_lista.dart';
+import '../../../shared/reportes/comprobante_pdf.dart';
 import '../../../shared/reportes/reporte_tabla.dart';
+import '../../../utils/formatters.dart';
 import '../models/unidad_medida.dart';
 import '../repositories/inventario_repository.dart';
+import '../models/conteo_nuevo.dart';
+import 'excel_inventario.dart';
 
 /// Cómo está un ítem según sus días de existencia y su stock mínimo.
 enum SituacionStock { sinDatos, optimo, bajo, critico }
@@ -562,6 +566,119 @@ class InventarioService extends ChangeNotifier {
     }
   }
 
+  // ---------------------------------------------------------- importar Excel
+
+  /// Rutas de las categorías propias del almacén (para leer el Excel y para
+  /// la hoja "Categorías" de la plantilla), ordenadas.
+  Map<int, String> get _rutasPropias {
+    final m = {for (final c in categoriasPropias) c.id: textoRuta(c.id)};
+    return Map.fromEntries(m.entries.toList()..sort((a, b) => a.value.compareTo(b.value)));
+  }
+
+  LecturaExcel leerExcel(Uint8List bytes) => leerExcelInventario(
+        bytes,
+        ContextoExcel(
+          rutas: _rutasPropias,
+          porCodigo: {for (final e in existencias) e.codigo.toUpperCase(): e.itemId},
+          porDetalle: {
+            for (final e in existencias)
+              sinTildes(e.detalle).replaceAll(RegExp(r'[^a-z0-9]'), ''): e.itemId
+          },
+        ),
+      );
+
+  /// Nombre del archivo de la plantilla (con la categoría abierta, si hay).
+  String get nombrePlantilla => categoriaFiltro == null
+      ? 'plantilla_inventario'
+      : 'plantilla_${sinTildes(_categoriaPorId(categoriaFiltro!)?.nombre ?? 'categoria').replaceAll(RegExp(r'[^a-z0-9]+'), '_')}';
+
+  /// Plantilla según dónde se está parado: dentro de una categoría (ej.
+  /// Termocontraíbles) trae solo sus categorías y las columnas que usan sus
+  /// ítems; en la raíz, la general con todo. De ejemplo, el primer ítem de la
+  /// lista. Sin conexión, sale igual pero con todas las columnas y sin ejemplo.
+  Future<Uint8List> plantillaExcel() async {
+    final almacen = almacenes.where((a) => a.id == almacenId).firstOrNull?.nombre ?? 'Almacén';
+    final cat = categoriaFiltro;
+    final ids = cat == null ? null : _idsConDescendientes(cat);
+    final rutas = {
+      for (final e in _rutasPropias.entries)
+        if (ids == null || ids.contains(e.key)) e.key: e.value
+    };
+    final enLista = [
+      for (final e in (visibles.isNotEmpty ? visibles : existencias))
+        if (ids == null || ids.contains(e.categoriaId)) e
+    ];
+    List<ItemInventario> fichas = const [];
+    try {
+      // Una categoría: todos sus ítems (para saber qué columnas usan); la
+      // general: solo el del ejemplo.
+      fichas = await _repo.itemsPorId(
+          [for (final e in (cat == null ? enLista.take(1) : enLista.take(500))) e.itemId]);
+    } catch (_) {}
+    final primero = enLista.isEmpty
+        ? null
+        : fichas.where((f) => f.id == enLista.first.itemId).firstOrNull;
+    return plantillaExcelInventario(
+      almacen,
+      rutas.values.toList(),
+      columnas: cat == null || fichas.isEmpty ? null : columnasUsadas(fichas),
+      ejemplo: primero == null ? null : (primero, textoRuta(primero.categoriaId)),
+      categoria: cat == null ? null : _categoriaPorId(cat)?.nombre,
+      extras: ({for (final f in fichas) ...f.otrosDatos.keys}.toList()..sort()),
+    );
+  }
+
+  /// Crea los ítems nuevos (uno por uno, avisando el avance) y, con
+  /// [cargarStock], registra la columna Stock como conteo físico de todos (los
+  /// nuevos y los que ya existían) en un solo envío. Devuelve el resumen.
+  Future<({int creados, int contados, List<String> errores})> importarExcel(
+    LecturaExcel lectura, {
+    bool cargarStock = false,
+    void Function(int hechos, int total)? progreso,
+  }) async {
+    if (!puedeCrear) return (creados: 0, contados: 0, errores: ['No tenés permiso para crear ítems en este almacén.']);
+    final errores = <String>[];
+    final conteos = <ConteoNuevo>[];
+    var creados = 0;
+    final nuevos = lectura.nuevos;
+    for (var i = 0; i < nuevos.length; i++) {
+      final f = nuevos[i];
+      final error = _validarItem(f.nuevo!);
+      if (error != null) {
+        errores.add('Fila ${f.fila} (${f.detalle}): $error');
+      } else {
+        try {
+          final id = await _repo.crearItem(f.nuevo!);
+          creados++;
+          if (cargarStock && f.stock != null && id != null) {
+            conteos.add(ConteoNuevo(itemId: id, almacenId: almacenId!, cantidadReal: f.stock!, observaciones: 'Importado de Excel'));
+          }
+        } catch (e) {
+          errores.add('Fila ${f.fila} (${f.detalle}): ${_mensaje(e, 'no se pudo crear')}');
+        }
+      }
+      progreso?.call(i + 1, nuevos.length);
+    }
+    if (cargarStock && puedeEditar) {
+      for (final f in lectura.existentes) {
+        if (f.stock != null) {
+          conteos.add(ConteoNuevo(itemId: f.existenteId!, almacenId: almacenId!, cantidadReal: f.stock!, observaciones: 'Importado de Excel'));
+        }
+      }
+    }
+    var contados = 0;
+    if (conteos.isNotEmpty) {
+      try {
+        await _repo.registrarConteos(conteos);
+        contados = conteos.length;
+      } catch (e) {
+        errores.add('El stock no se cargó: ${_mensaje(e, 'error al registrar los conteos')}');
+      }
+    }
+    await recargar();
+    return (creados: creados, contados: contados, errores: errores);
+  }
+
   Future<String?> desactivarItem(int id) async {
     if (!puedeEliminar) return 'No tenés permiso para eliminar ítems.';
     try {
@@ -604,6 +721,75 @@ class InventarioService extends ChangeNotifier {
 
   Future<List<MovimientoInv>> movimientosDe(ExistenciaItem item) =>
       _repo.movimientos(item.itemId, item.almacenId);
+
+  /// Ficha de UN ítem en PDF (acción de la tabla): sus datos, características,
+  /// otros datos y los últimos 100 movimientos en este almacén.
+  Future<Uint8List> fichaPdf(ExistenciaItem e) async {
+    final r = await Future.wait([_repo.item(e.itemId), movimientosDe(e)]);
+    final item = r[0] as ItemInventario;
+    final movs = r[1] as List<MovimientoInv>;
+    final sit = situacion(e);
+    String? n(Object? v, [String? u]) =>
+        v == null ? null : '${v is num ? fmtNum(v) : v}${u == null ? '' : ' $u'}';
+    return ComprobantePdf.generar(
+      titulo: 'Ficha de ítem',
+      subtitulo: '${e.codigo} · ${almacenes.where((a) => a.id == e.almacenId).firstOrNull?.nombre ?? ''}',
+      estado: textoSituacion(sit),
+      colorEstado: switch (sit) {
+        SituacionStock.critico => 0xFFDC2626,
+        SituacionStock.bajo => 0xFFD97706,
+        SituacionStock.optimo => 0xFF16A34A,
+        SituacionStock.sinDatos => 0xFF6B7280,
+      },
+      secciones: [
+        (null, [
+          ('Detalle', e.detalle),
+          ('Código', e.codigo),
+          ('Ubicación', textoRuta(e.categoriaId)),
+          ('Unidad', e.unidad),
+        ]),
+        ('Stock', [
+          ('En el sistema', n(e.cantidadSistema, e.unidad)),
+          ('Último conteo físico', n(e.cantidadReal, e.unidad)),
+          ('Stock mínimo', n(e.stockMinimo, e.unidad)),
+          ('Consumo diario', n(e.consumoDiario, e.unidad)),
+          ('Días de existencia', e.diasExistencia == null ? null : fmtNum(e.diasExistencia, decimales: 1)),
+          ('Necesita pedido', necesitaPedido(e) ? 'Sí' : null),
+        ]),
+        ('Compra y empaque', [
+          ('Se compra en', item.unidadCompra == null
+              ? null
+              : '${item.unidadCompra} de ${n(item.factorCompra, e.unidad) ?? '—'}'),
+          ('Unidades por caja', n(item.unidadesPorCaja)),
+        ]),
+        ('Características', [
+          ('Color', n(item.atributos['color'])),
+          ('Formato', n(item.atributos['formato'])),
+          ('Peso', n(item.atributos['peso_g'], 'g')),
+          ('Ancho', n(item.atributos['ancho_mm'], 'mm')),
+          ('Micronaje', n(item.atributos['micronaje'])),
+        ]),
+        ('Otros datos', [for (final o in item.otrosDatos.entries) (o.key, n(o.value))]),
+      ],
+      tablas: [
+        TablaComprobante(
+          titulo: 'Últimos movimientos',
+          encabezados: const ['Fecha', 'Tipo', 'Cantidad', 'Lote', 'Motivo', 'Usuario'],
+          filas: [
+            for (final m in movs)
+              [
+                fmtFechaHora(m.fecha),
+                '${m.tipo[0].toUpperCase()}${m.tipo.substring(1)}${m.revertido ? ' (revertido)' : ''}',
+                '${m.cantidad > 0 ? '+' : ''}${fmtNum(m.cantidad)} ${e.unidad}',
+                m.nLote ?? '',
+                m.motivo ?? '',
+                m.usuarioNombre ?? '',
+              ]
+          ],
+        ),
+      ],
+    );
+  }
 
   /// Ingreso o salida manual (saldo inicial, consumo, rotura…). El servidor
   /// vuelve a validar todo; acá se evita el viaje si ya se ve el error.

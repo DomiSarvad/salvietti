@@ -57,6 +57,10 @@ class Usuario {
   /// Ve informes en vez de las pantallas de trabajo de cada área (ver
   /// [Rol.soloInformes]).
   bool get soloInformes => Rol.soloInformes.contains(rol);
+
+  /// No ve Recepciones, Pedidos de las áreas, Pedidos de compra ni el avance
+  /// de Soplado en Jarabes (ver [Rol.sinOperacionAlmacen]).
+  bool get sinOperacionAlmacen => Rol.sinOperacionAlmacen.contains(rol);
   bool get esJefeProduccion => rol == 'jefe_produccion';
   bool get esJefeJarabes => rol == 'jarabes';
 

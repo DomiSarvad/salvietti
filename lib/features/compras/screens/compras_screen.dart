@@ -15,20 +15,23 @@ import '../../../shared/filtros/barra_filtros.dart';
 /// Pedidos de compra: Almacén pide comprar (varios ítems) y el Gerente
 /// aprueba o rechaza. Solo UI; las reglas viven en el service.
 class ComprasScreen extends StatelessWidget {
-  const ComprasScreen({super.key});
+  /// Dentro de Solicitudes (una pestaña más): sin título propio.
+  final bool incrustada;
+  const ComprasScreen({super.key, this.incrustada = false});
 
   @override
   Widget build(BuildContext context) {
     final usuario = context.read<AuthService>().usuarioActual!;
     return ChangeNotifierProvider(
       create: (_) => ComprasService(SupabaseComprasRepository(), usuario)..iniciar(),
-      child: const _Vista(),
+      child: _Vista(incrustada: incrustada),
     );
   }
 }
 
 class _Vista extends StatefulWidget {
-  const _Vista();
+  final bool incrustada;
+  const _Vista({this.incrustada = false});
 
   @override
   State<_Vista> createState() => _VistaState();
@@ -50,7 +53,7 @@ class _VistaState extends State<_Vista> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted && !widget.incrustada) {
         TourAyuda.mostrar(context, idTour: 'compras', soloSiNoVisto: true, pasos: _pasosAyuda());
       }
     });
@@ -124,15 +127,16 @@ class _VistaState extends State<_Vista> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          const Expanded(
-            child: Text('Pedidos de compra',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-          ),
-          BotonAyuda(idTour: 'compras', pasos: _pasosAyuda),
-        ]),
+        if (!widget.incrustada)
+          Row(children: [
+            const Expanded(
+              child: Text('Pedidos de compra',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            BotonAyuda(idTour: 'compras', pasos: _pasosAyuda),
+          ]),
         if (svc.puedeCrear) ...[
-          const SizedBox(height: 8),
+          if (!widget.incrustada) const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
             child: _pasoNuevo.envolver(FilledButton.icon(

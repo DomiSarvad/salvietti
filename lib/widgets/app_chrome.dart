@@ -49,19 +49,24 @@ class AppTopBar extends StatelessWidget {
                   ),
                 Image.asset('assets/logo.png', height: 40),
                 const Spacer(),
+                // Sincronización: su color ES el estado (verde al día, ámbar
+                // subiendo, gris sin internet), y gira mientras sube.
                 _BotonTop(
                   icono: !sync.online
-                      ? Icons.cloud_off
-                      : (sync.pendientes > 0 ? Icons.sync : Icons.cloud_done),
-                  color: (!sync.online || sync.pendientes > 0)
-                      ? const Color(0xFFF0A030)
-                      : const Color(0xFF3DA35D),
+                      ? Icons.cloud_off_rounded
+                      : (sync.pendientes > 0 ? Icons.sync_rounded : Icons.cloud_done_rounded),
+                  gradiente: !sync.online
+                      ? const [Color(0xFF9AA4AE), Color(0xFF5E6873)]
+                      : sync.pendientes > 0
+                          ? const [Color(0xFFFFC857), Color(0xFFE08A12)]
+                          : const [Color(0xFF4CD486), Color(0xFF1E9B55)],
+                  girar: sync.online && sync.pendientes > 0,
                   tooltip: estadoSync,
                   badge: sync.pendientes,
                 ),
+                // Configuración no informa nada: vidrio, para no competir.
                 _BotonTop(
-                  icono: Icons.settings,
-                  color: const Color(0xFFD9534F),
+                  icono: Icons.settings_rounded,
                   tooltip: 'Configuración',
                   onTap: () => onNavegar('configuracion'),
                 ),
@@ -90,7 +95,17 @@ class AppTopBar extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircleAvatar(
+                      Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFF2D27A), AppColors.secundario],
+                          ),
+                        ),
+                        child: CircleAvatar(
                         radius: 16,
                         backgroundColor: AppColors.primario,
                         backgroundImage: auth.fotoLocalPendiente != null
@@ -107,7 +122,7 @@ class AppTopBar extends StatelessWidget {
                                 style: const TextStyle(
                                     color: Colors.white, fontSize: 14))
                             : null,
-                      ),
+                      )),
                       if (!muyCompacto) ...[
                         const SizedBox(width: 8),
                         ConstrainedBox(
@@ -143,41 +158,107 @@ class AppTopBar extends StatelessWidget {
   }
 }
 
-/// Cuadrado de color de la barra superior (mismo estilo que los accesos
-/// rápidos de la referencia).
-class _BotonTop extends StatelessWidget {
+/// Botón de la barra superior. Con [gradiente]: relleno degradado y un brillo
+/// suave de su color (el estado de la sincronización se ve de lejos). Sin
+/// gradiente: "vidrio" translúcido, para acciones que no informan un estado
+/// (Configuración). Al pasar el mouse se levanta apenas; [girar] lo hace
+/// rotar (mientras se sube algo pendiente).
+class _BotonTop extends StatefulWidget {
   final IconData icono;
-  final Color color;
+  final List<Color>? gradiente;
   final String tooltip;
   final VoidCallback? onTap;
   final int badge;
+  final bool girar;
   const _BotonTop({
     required this.icono,
-    required this.color,
     required this.tooltip,
+    this.gradiente,
     this.onTap,
     this.badge = 0,
+    this.girar = false,
   });
 
   @override
+  State<_BotonTop> createState() => _BotonTopState();
+}
+
+class _BotonTopState extends State<_BotonTop> with SingleTickerProviderStateMixin {
+  late final _giro = AnimationController(vsync: this, duration: const Duration(seconds: 2));
+  bool _encima = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.girar) _giro.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_BotonTop viejo) {
+    super.didUpdateWidget(viejo);
+    if (widget.girar && !_giro.isAnimating) _giro.repeat();
+    if (!widget.girar && _giro.isAnimating) {
+      _giro.stop();
+      _giro.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _giro.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final g = widget.gradiente;
+    final radio = BorderRadius.circular(12);
     return Padding(
-      padding: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.only(left: 8),
       child: Tooltip(
-        message: tooltip,
+        message: widget.tooltip,
         child: Badge(
-          label: Text('$badge'),
-          isLabelVisible: badge > 0,
-          child: Material(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                width: 40,
-                height: 38,
-                child: Icon(icono, size: 20, color: Colors.white),
+          label: Text('${widget.badge}'),
+          isLabelVisible: widget.badge > 0,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _encima = true),
+            onExit: (_) => setState(() => _encima = false),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              transform: Matrix4.translationValues(0, _encima ? -1.5 : 0, 0),
+              decoration: BoxDecoration(
+                borderRadius: radio,
+                gradient: g == null
+                    ? null
+                    : LinearGradient(
+                        begin: Alignment.topLeft, end: Alignment.bottomRight, colors: g),
+                color: g == null ? Colors.white.withValues(alpha: _encima ? 0.16 : 0.09) : null,
+                // Borde claro arriba: da el relieve de "botón" en vez de un plano.
+                border: Border.all(color: Colors.white.withValues(alpha: g == null ? 0.18 : 0.28)),
+                boxShadow: g == null
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: g.last.withValues(alpha: _encima ? 0.6 : 0.4),
+                          blurRadius: _encima ? 14 : 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: widget.onTap,
+                  borderRadius: radio,
+                  child: SizedBox(
+                    width: 40,
+                    height: 38,
+                    child: RotationTransition(
+                      turns: _giro,
+                      child: Icon(widget.icono, size: 21, color: Colors.white),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

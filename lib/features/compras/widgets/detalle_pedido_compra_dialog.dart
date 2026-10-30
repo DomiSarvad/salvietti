@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../shared/pagina_o_dialogo.dart';
+import '../../../shared/reportes/comprobante_pdf.dart';
 import '../../../core/constants.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/notificaciones.dart';
@@ -59,6 +60,45 @@ class _DetallePedidoCompraDialogState extends State<DetallePedidoCompraDialog> {
     }
   }
 
+  /// Comprobante del pedido (lo que se pidió y lo que respondió el Gerente).
+  Future<void> _pdf() async {
+    final p = widget.pedido;
+    try {
+      final bytes = await ComprobantePdf.generar(
+        titulo: 'Pedido de compra #${p.id}',
+        subtitulo: 'Almacén → Gerencia',
+        estado: p.estado.etiqueta,
+        colorEstado: colorEstadoCompra(p.estado).toARGB32(),
+        secciones: [
+          ('Pedido', [
+            ('Pedido por', p.solicitanteNombre),
+            ('Fecha', fmtFechaHora(p.fecha)),
+            ('Motivo', p.motivo),
+          ]),
+          ('Respuesta de Gerencia', [
+            ('Resuelto por', p.resueltoPorNombre),
+            ('Fecha', p.resueltoEn == null ? null : fmtFechaHora(p.resueltoEn)),
+            (p.estado == EstadoCompra.rechazado ? 'Motivo del rechazo' : 'Respuesta', p.respuesta),
+          ]),
+        ],
+        tablas: [
+          TablaComprobante(
+            titulo: 'Ítems',
+            encabezados: const ['Código', 'Ítem', 'Cantidad', 'Nota'],
+            filas: [
+              for (final l in p.lineas) [l.codigo, l.detalle, '${fmtNum(l.cantidad)} ${l.unidad}', l.nota ?? '']
+            ],
+          ),
+        ],
+        firmas: const ['Solicitó (Almacén)', 'Gerencia'],
+      );
+      final msg = await ComprobantePdf.guardar(bytes, 'Pedido de compra ${p.id}');
+      if (mounted) mostrarInfo(context, msg);
+    } catch (_) {
+      if (mounted) mostrarError(context, 'No se pudo generar el PDF.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.pedido;
@@ -84,6 +124,11 @@ class _DetallePedidoCompraDialogState extends State<DetallePedidoCompraDialog> {
                 ),
                 Text('${p.solicitanteNombre ?? '—'} · ${fmtFechaHora(p.fecha)}',
                     style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                TextButton.icon(
+                  onPressed: _pdf,
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                  label: const Text('Comprobante PDF'),
+                ),
               ]),
               if (p.motivo != null) ...[
                 const SizedBox(height: 8),

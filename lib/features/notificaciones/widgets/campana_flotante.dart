@@ -51,20 +51,43 @@ class CampanaFlotante extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = context.watch<CampanaService>().total;
+    // Como los botones de la barra superior: degradado con borde claro y
+    // brillo de su color; dorado cuando hay algo pendiente.
+    final colores = total > 0
+        ? const [Color(0xFFE2B85A), AppColors.secundario]
+        : const [Color(0xFF2E8B57), AppColors.primario];
     return Tooltip(
       message: total == 0 ? 'Notificaciones' : '$total pendiente${total == 1 ? '' : 's'}',
-      child: FloatingActionButton(
-        heroTag: 'campana',
-        backgroundColor: AppColors.primario,
-        foregroundColor: Colors.white,
-        shape: const CircleBorder(),
-        onPressed: () => _abrirPanel(context),
-        child: Badge(
-          isLabelVisible: total > 0,
-          label: Text(total > 99 ? '99+' : '$total'),
-          backgroundColor: const Color(0xFFDC2626),
-          offset: const Offset(10, -10),
-          child: const Icon(Icons.notifications_rounded, size: 28),
+      child: Badge(
+        isLabelVisible: total > 0,
+        label: Text(total > 99 ? '99+' : '$total'),
+        backgroundColor: const Color(0xFFDC2626),
+        offset: const Offset(-2, 2),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colores),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
+            boxShadow: [
+              BoxShadow(color: colores.last.withValues(alpha: 0.45), blurRadius: 14, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => _abrirPanel(context),
+              child: Icon(
+                  total > 0 ? Icons.notifications_active_rounded : Icons.notifications_rounded,
+                  size: 27,
+                  color: Colors.white),
+            ),
+          ),
         ),
       ),
     );
@@ -146,14 +169,18 @@ class _Panel extends StatelessWidget {
                             },
                           ),
                   ),
-                  if (svc.puedeCrearSolicitud) ...[
+                  if (svc.puedeCrearSolicitud || svc.puedeVerSolicitudes) ...[
                     const Divider(height: 1),
                     Padding(
                       padding: const EdgeInsets.all(8),
                       child: TextButton.icon(
                         onPressed: onNuevaSolicitud,
-                        icon: const Icon(Icons.add_comment_outlined),
-                        label: const Text('Nueva solicitud o pregunta'),
+                        icon: Icon(svc.puedeCrearSolicitud
+                            ? Icons.add_comment_outlined
+                            : Icons.mark_email_read_outlined),
+                        label: Text(svc.puedeCrearSolicitud
+                            ? 'Nueva solicitud o pregunta'
+                            : 'Ver solicitudes'),
                       ),
                     ),
                   ],

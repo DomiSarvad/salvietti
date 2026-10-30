@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:toastification/toastification.dart';
-import 'core/constants.dart';
+import 'shared/tema_app.dart';
 import 'features/presencia/repositories/presencia_repository.dart';
 import 'features/presencia/services/presencia_service.dart';
 import 'services/auth_service.dart';
@@ -65,13 +65,7 @@ class SalviettiApp extends StatelessWidget {
           builder: (context, prefs, _) => MaterialApp(
             title: 'Salvietti Control',
             debugShowCheckedModeBanner: false,
-            theme: ThemeData(
-              useMaterial3: true,
-              // La incluida en assets/fonts (en la web no se baja de internet).
-              fontFamily: 'Roboto',
-              colorSchemeSeed: AppColors.primario,
-              scaffoldBackgroundColor: AppColors.fondo,
-            ),
+            theme: temaApp(),
             // Tamaño de letra elegido en Configuración: se aplica a toda la
             // app envolviendo el árbol con un MediaQuery propio, sin tener
             // que tocar cada pantalla.

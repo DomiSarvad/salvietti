@@ -270,10 +270,46 @@ permiso de verlo: faltaba en Inicio y Almacenes), y foto de cada ítem (`inv_ite
   la resolvió = `aprobada_por_nombre/_en`, motivo, insumos). Se aprueban igual en Jarabes. (Un primer
   intento la ponía en Jarabes y le mostraba "Jarabes" al Gerente; se deshizo.)
 - **Menú** (2026-10-29): Inicio, Producción del día, Informes, Informe de Producción, Jarabes… y
-  Solicitudes al final, antes del Manual (se abre también desde la campana).
+  Solicitudes al final, antes del Manual (se abre también desde la campana). Solicitudes SÍ se ve en el
+  menú del Gerente (2026-10-29, lo pidió el usuario: es quien las resuelve), y el panel de la campana
+  tiene abajo "Ver solicitudes" para quien puede verlas pero no pedir (`CampanaService.puedeVerSolicitudes`).
+  La campana es un círculo con degradado (verde; dorado con ícono "activo" si hay pendientes).
+- **Solicitudes junta Entregas y Pedidos de compra** (2026-10-30, pedido del usuario): ya no tienen ítem
+  propio en el menú; son pestañas al lado de "Mis solicitudes"/"Por aprobar": **"Pedidos de las áreas"**
+  (Entregas: lo que Jarabes, Soplado… le piden a Almacén, para entregar o no; no la ve el Gerente) y
+  **"Pedidos de compra"**. `SolicitudesScreen(extras: [PestanaExtra…], inicial:)`: las pestañas las arma
+  `HomeShell._pestanasSolicitudes` según permisos (así Solicitudes no importa pantallas de otro módulo);
+  `EntregasScreen`/`ComprasScreen(incrustada: true)` se dibujan sin título ni tour propio. Las rutas
+  `entregas`/`compras` siguen existiendo (campana) y abren Solicitudes en esa pestaña.
 - **Almacenes: filtro por tipo + varios productos** (2026-10-29): "Tipo" (`tiposFiltro`, varias
   categorías de primer nivel a la vez, hoja con casillas) se suma al buscador y al reporte; en el
   buscador la coma es "o" (`_gruposBusqueda`: "tapa negra, preforma 28" trae los dos).
+- **Plantilla de Importar Excel según la categoría** (2026-10-30): `InventarioService.plantillaExcel()`
+  (async) mira `categoriaFiltro`: dentro de una categoría trae solo sus categorías (hoja "Categorías") y
+  las columnas opcionales que usa al menos uno de sus ítems (`columnasUsadas`, lee las fichas con
+  `InventarioRepository.itemsPorId`); en la raíz, la general con las 15 columnas. La fila 2 es el
+  PRIMER ítem de la lista (real, con su código y SIN stock: al importar se reconoce como existente y no
+  se crea ni se toca). Antes era una "Tapa Short Negra" fija en todos los almacenes que, si no se
+  borraba, se importaba como ítem nuevo. Sin conexión sale la general sin ejemplo.
+- **Columnas propias del Excel = "Otros datos"** (2026-10-30): una columna que el lector no conoce
+  (Proveedor, Precio…) ya no se ignora en silencio: `LecturaExcel.columnasExtra` (aviso ámbar en la
+  vista previa) y su valor va a `atributos` de cada ítem NUEVO con el nombre tal cual (texto; en los que
+  ya existen no se toca). `ItemInventario.atributosConocidos`/`otrosDatos`; el formulario del ítem los
+  muestra en "Otros datos" y los CONSERVA al editar (antes armaba `atributos` solo con los 5 conocidos:
+  habría borrado los demás). La plantilla de una categoría trae también esas columnas.
+- **Jefe de Producción ("ingeniero") sin lo operativo de Almacén** (2026-10-30, pedido del usuario):
+  `Rol.sinOperacionAlmacen`/`Usuario.sinOperacionAlmacen` oculta Recepciones del menú, las pestañas
+  "Pedidos de las áreas" y "Pedidos de compra" de Solicitudes (`HomeShell._pestanasSolicitudes`) y el
+  "Avance de Soplado" de Jarabes (`JarabesService.muestraAvanceSoplado`): va directo a Informes. Solo
+  presentación, como `soloInformes`: NO se le sacaron los permisos `ver` (Informes lee esas tablas).
+- **Comprobantes PDF de UN registro** (2026-10-30, `lib/shared/reportes/comprobante_pdf.dart`,
+  `ComprobantePdf.generar` + `TablaComprobante`): mismo estilo que la constancia de Solicitudes.
+  `PaginaDetalle(nombrePdf:, tablasPdf:, firmasPdf:)` pone el botón en la barra negra y arma el PDF con
+  sus MISMOS datos (estado, secciones). Usado en: pedido de un área (Entregas: tocar la tarjeta abre
+  `abrirDetallePedido`), receta (Solicitudes → Recetas), pedido de compra (botón en su detalle) y
+  "Ficha en PDF" de cada ítem en las acciones de Almacenes (`InventarioService.fichaPdf`: datos,
+  características, otros datos y últimos 100 movimientos). Lo que pasa entre dos áreas y tiene detalle
+  nuevo lleva `nombrePdf`.
 - **Fotos** (v46, 2026-10-29): Recepciones admite hasta 6 (`inv_recepciones.fotos text[]`; `foto_url`
   queda con la primera, y `fotos` solo se manda con 2+ para que una sola foto ande sin v46;
   `RecepcionDetalle.fotos` junta las dos). Productos del catálogo de Producción: foto
@@ -308,8 +344,26 @@ permiso de verlo: faltaba en Inicio y Almacenes), y foto de cada ítem (`inv_ite
   hecho con AlertDialog va con este.
 - **Cierre por ausencia**: el aviso pasó a "Tu sesión se cerró por inactividad…" en un recuadro ámbar con
   ícono (antes texto rojo, parecía un error). Se mantiene (computadoras compartidas por turno).
+- **Botones de toda la app** (2026-10-29, `lib/shared/tema_app.dart`, `temaApp()` en `main.dart`): mismo
+  estilo que los de la barra superior. Filled/Elevated: esquinas de 12, brillo arriba (`backgroundBuilder`
+  translúcido, sobre el color que ponga la pantalla) y sombra verde que crece al pasar el mouse; Outlined:
+  blancos con relieve, borde verde al pasar el mouse; chips blancos con borde suave. `OpcionesDeslizables`
+  dibuja la elegida con degradado verde y brillo; PDF/Excel de `BarraFiltros` con tinte de su color. Un
+  botón nuevo NO necesita estilo propio (sale del tema); no ponerle `shape`/`elevation` a mano.
 - `CheckAnimado` (`lib/shared/check_animado.dart`): ✓ que se dibuja trazo a trazo. En `avisoExito` y en
   el chip "Completado" de Producción del día.
+- **Importar Excel en Almacenes** (2026-10-29): botón "Importar Excel" (con `puedeCrear`) →
+  `ImportarExcelInventarioDialog`: descargar plantilla (hojas Inventario, Categorías con las rutas del
+  almacén, Instrucciones), elegir el .xlsx, ver nuevos / ya existen / con error por fila, importar.
+  Lector puro en `services/excel_inventario.dart` (`leerExcelInventario`, sinónimos de columnas,
+  categoría por ruta o por último nombre si no se repite, unidades "kilo/litros/pza…"). Ya existe =
+  mismo código o mismo detalle sin tildes: no se modifica. "Cargar el stock como conteo" registra la
+  columna Stock con `registrarConteos` (un envío, nuevos y existentes). `crearItem` ahora devuelve el
+  id. El importador viejo (`lib/screens/inventario/importar_excel_dialog.dart`) es de las tablas legacy.
+  Test: `excel_inventario_test.dart`.
+- **Barra superior** (`app_chrome.dart`, `_BotonTop`): sincronización con degradado y brillo del color de su
+  estado (verde al día, ámbar subiendo —gira—, gris sin internet); Configuración en "vidrio" translúcido
+  (antes rojo plano: el rojo se reserva para errores); foto con aro dorado (`AppColors.secundario`).
 - **Foto de perfil perdida** (2026-10-29): `PerfilDialog` mandaba a la cola local CUALQUIER error de
   subida (no solo falta de red): se veía desde ese navegador, nunca llegaba al servidor y se perdía al
   borrarse sus datos. Ahora solo `ClienteOffline.esFallaDeRed` va a la cola; otro error se muestra.

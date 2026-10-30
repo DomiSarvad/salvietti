@@ -8,6 +8,7 @@ import 'package:salvietti_control/features/inventario/models/conteo_nuevo.dart';
 import 'package:salvietti_control/features/inventario/models/existencia_item.dart';
 import 'package:salvietti_control/features/inventario/services/balance_service.dart';
 import 'package:salvietti_control/features/inventario/models/item_inventario.dart';
+import 'package:salvietti_control/features/inventario/services/excel_inventario.dart';
 import 'package:salvietti_control/features/inventario/models/movimiento_inv.dart';
 import 'package:salvietti_control/features/inventario/repositories/inventario_repository.dart';
 import 'package:salvietti_control/features/inventario/services/inventario_service.dart';
@@ -81,7 +82,13 @@ class _RepoFalso implements InventarioRepository {
       const ItemInventario(id: 10, categoriaId: 3, detalle: 'x', unidad: 'PZA');
 
   @override
-  Future<void> crearItem(ItemInventario item) async => creados.add(item);
+  Future<List<ItemInventario>> itemsPorId(List<int> ids) async => const [];
+
+  @override
+  Future<int?> crearItem(ItemInventario item) async {
+    creados.add(item);
+    return 1000 + creados.length;
+  }
 
   @override
   Future<void> actualizarItem(ItemInventario item) async {}
@@ -182,6 +189,24 @@ Future<InventarioService> _servicio(Set<String>? permisos, [_RepoFalso? repo]) a
 }
 
 void main() {
+  test('importar Excel: crea los nuevos y carga el stock como conteo en un solo envío', () async {
+    final repo = _RepoFalso();
+    final s = await _servicio(_todoGeneral, repo);
+    const lectura = LecturaExcel(filas: [
+      FilaExcel(fila: 2, detalle: 'Tapa roja', stock: 50,
+          nuevo: ItemInventario(categoriaId: 3, detalle: 'Tapa roja', unidad: 'PZA')),
+      FilaExcel(fila: 3, detalle: 'Escoba', existenteId: 12, stock: 4),
+      FilaExcel(fila: 4, detalle: 'Ajena',
+          nuevo: ItemInventario(categoriaId: 5, detalle: 'Ajena', unidad: 'UNI')),
+    ]);
+    final r = await s.importarExcel(lectura, cargarStock: true);
+    expect(r.creados, 1);
+    expect(repo.creados.single.detalle, 'Tapa roja');
+    expect(r.errores.single, contains('Fila 4')); // categoría de otro almacén
+    expect(repo.lotes.map((c) => (c.itemId, c.cantidadReal)), [(1001, 50.0), (12, 4.0)]);
+    expect(r.contados, 2);
+  });
+
   balanceTests();
   test('solo muestra los almacenes que el rol puede ver', () async {
     final s = await _servicio({'inventario_general:ver'});
